@@ -17,8 +17,10 @@ cabal-version:       >=1.10
 
 executable acov
   main-is:             Main.hs
-  other-modules:       Parser
-                     , Ranged
+  other-modules:       Ranged
+                     , ErrorsOr
+                     , Parser
+                     , When
   -- other-extensions:    
   build-depends:       base >=4.10 && <4.11
                      , parsec >= 3.1.0

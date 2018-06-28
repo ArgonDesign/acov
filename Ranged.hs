@@ -16,9 +16,6 @@ extendRange (LCRange lc0 _) (LCRange _ lc1) = LCRange lc0 lc1
 data Ranged a = Ranged LCRange a
   deriving Show
 
-instance Functor Ranged where
-  fmap f (Ranged rng a) = Ranged rng (f a)
-
 rangedRange :: Ranged a -> LCRange
 rangedRange (Ranged rng _) = rng
 

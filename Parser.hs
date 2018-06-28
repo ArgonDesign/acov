@@ -1,4 +1,12 @@
-module Parser where
+module Parser
+  ( Symbol(..)
+  , DottedSymbol(..)
+  , Expression(..)
+  , Port(..)
+  , CoverList(..)
+  , Stmt(..)
+  , TLStmt(..)
+  ) where
 
 import Data.Char (digitToInt)
 import Data.Functor.Identity (Identity)
@@ -37,6 +45,9 @@ import Ranged
 data VInt = VInt (Maybe Integer) Bool Integer
   deriving Show
 
+newtype Symbol = Symbol String
+  deriving Show
+
 data DottedSymbol = DottedSymbol Symbol Symbol
   deriving Show
 
@@ -46,7 +57,7 @@ newtype CoverList = CoverList [Ranged VInt]
 data Port = Port Symbol (Maybe Slice)
   deriving Show
 
-data TLStmt = Module (Ranged Symbol) [Ranged Port] [Ranged Stmt]
+data TLStmt = Module (Ranged Symbol) [Ranged Port] [Stmt]
             | Cover (Ranged DottedSymbol) (Maybe CoverList)
             | Cross [Ranged DottedSymbol]
   deriving Show
@@ -128,9 +139,6 @@ lexer = T.makeTokenParser language
 {-
   Use the lexer to define parsers for things like identifiers, integers etc.
 -}
-newtype Symbol = Symbol String
-  deriving Show
-
 sym :: Parser Symbol
 sym = Symbol <$> T.identifier lexer
 
@@ -336,7 +344,7 @@ module' :: Parser TLStmt
 module' = do { T.reserved lexer "module"
          ; name <- rangedParse sym
          ; pl <- portList
-         ; stmts <- T.braces lexer (many $ rangedParse statement)
+         ; stmts <- T.braces lexer (many statement)
          ; return $ Module name pl stmts
          }
 
