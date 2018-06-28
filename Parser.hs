@@ -1,5 +1,6 @@
 module Parser where
 
+import Data.Char (digitToInt)
 import Data.Functor.Identity (Identity)
 import qualified Text.Parsec.Language as L
 import qualified Text.Parsec.Token as T
@@ -26,14 +27,17 @@ import Text.Parsec
         record qux as qxx;
      }
 
-     cover xxx.foo {0, 0x12, 2047};
+     cover xxx.foo {0, 12, 2047};
      cover xxx.baz;
      cross xxx.foo xxx.baz;
 -}
+data VInt = VInt (Maybe Integer) Bool Integer
+  deriving Show
+
 data DottedSymbol = DottedSymbol Symbol Symbol
   deriving Show
 
-newtype CoverList = CoverList [Integer]
+newtype CoverList = CoverList [VInt]
   deriving Show
 
 data TLStmt = Module Symbol [Port] [Stmt]
@@ -66,7 +70,7 @@ data BinOp = Times | Divide | Modulo
   deriving Show
 
 data Atom = AtomSym Symbol
-          | AtomInt Integer
+          | AtomInt VInt
   deriving Show
 
 data Expression = ExprAtom Atom
@@ -122,17 +126,45 @@ newtype Symbol = Symbol String
 sym :: Parser Symbol
 sym = Symbol <$> T.identifier lexer
 
-integer :: Parser Integer
-integer = T.integer lexer
-
 commaSep :: Parser a -> Parser [a]
 commaSep p = sepBy p (T.reservedOp lexer ",")
+
+{-
+  An integer needs to use the funky 8'h123 syntax, rather than the
+  Haskell-like syntax ("o755") that you get from Parsec by default.
+-}
+
+genDigit :: Parser Char -> Parser Char
+genDigit p = skipMany (char '_') >> p
+
+uint :: Integer -> Parser Char -> Parser Integer
+uint base digitParser = do { digits <- many1 (genDigit digitParser)
+                           ; let n = foldl acc 0 digits
+                           ; seq n $ return n
+                           }
+  where acc x c = base * x + toInteger (digitToInt c)
+
+baseVInt :: Maybe Integer -> Parser VInt
+baseVInt w = do { char '\''
+                ; s <- option False (char 's' >> return True)
+                ; n <- ((char 'h' >> uint 16 hexDigit) <|>
+                        (char 'd' >> uint 10 digit) <|>
+                        (char 'o' >> uint 8 octDigit) <|>
+                        (char 'b' >> uint 2 binDigit))
+                ; return $ VInt w s n
+                }
+  where binDigit = ((char '0' <|> char '1') <?> "binary digit")
+
+integer :: Parser VInt
+integer = (baseVInt Nothing) <|>
+          do { d <- uint 10 digit ;
+               option (VInt Nothing False d) (baseVInt (Just d)) }
 
 {-
   A "slice" is of the form [A:B] where we require both A and B to be
   non-negative integers.
 -}
-data Slice = Slice Integer Integer
+data Slice = Slice VInt VInt
   deriving Show
 
 slice :: Parser Slice
@@ -157,6 +189,7 @@ port = do { name <- sym
 
 portList :: Parser [Port]
 portList = T.parens lexer (commaSep port) <?> "port list"
+
 
 {-
   In order to parse the internals of a "module", we need to parse
