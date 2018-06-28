@@ -4,9 +4,12 @@ import Data.Char (digitToInt)
 import Data.Functor.Identity (Identity)
 import qualified Text.Parsec.Language as L
 import qualified Text.Parsec.Token as T
-import Text.Parsec.String
-import Text.Parsec.Expr
 import Text.Parsec
+import Text.Parsec.Expr
+import Text.Parsec.Pos
+import Text.Parsec.String
+
+import Ranged
 
 {-
 
@@ -37,18 +40,21 @@ data VInt = VInt (Maybe Integer) Bool Integer
 data DottedSymbol = DottedSymbol Symbol Symbol
   deriving Show
 
-newtype CoverList = CoverList [VInt]
+newtype CoverList = CoverList [Ranged VInt]
   deriving Show
 
-data TLStmt = Module Symbol [Port] [Stmt]
-            | Cover DottedSymbol (Maybe CoverList)
-            | Cross [DottedSymbol]
+data Port = Port Symbol (Maybe Slice)
   deriving Show
 
-data Stmt = StmtTrigger Symbol
-          | StmtAssign Symbol Expression
-          | StmtRecord Expression (Maybe Symbol)
-          | StmtWhen Symbol [Stmt]
+data TLStmt = Module (Ranged Symbol) [Ranged Port] [Ranged Stmt]
+            | Cover (Ranged DottedSymbol) (Maybe CoverList)
+            | Cross [Ranged DottedSymbol]
+  deriving Show
+
+data Stmt = StmtTrigger (Ranged Symbol)
+          | StmtAssign (Ranged Symbol) (Ranged Expression)
+          | StmtRecord (Ranged Expression) (Maybe (Ranged Symbol))
+          | StmtWhen (Ranged Symbol) [Ranged Stmt]
   deriving Show
 
 data UnOp = LogNot | BitNot
@@ -74,13 +80,15 @@ data Atom = AtomSym Symbol
   deriving Show
 
 data Expression = ExprAtom Atom
-                | ExprParens Expression
-                | ExprSlice Expression Slice
-                | ExprConcat [Expression]
-                | ExprReplicate Expression Expression
-                | ExprUnOp UnOp Expression
-                | ExprBinOp BinOp Expression Expression
-                | ExprCond Expression Expression Expression
+                | ExprParens (Ranged Expression)
+                | ExprSlice (Ranged Expression) Slice
+                | ExprConcat [Ranged Expression]
+                | ExprReplicate (Ranged Expression) (Ranged Expression)
+                | ExprUnOp (Ranged UnOp) (Ranged Expression)
+                | ExprBinOp (Ranged BinOp)
+                  (Ranged Expression) (Ranged Expression)
+                | ExprCond (Ranged Expression)
+                  (Ranged Expression) (Ranged Expression)
   deriving Show
 
 {-
@@ -179,17 +187,23 @@ slice = (T.brackets lexer $
   To parse the port list of a module, we need a comma separated list
   of identifiers, possibly with slices.
 -}
-data Port = Port Symbol (Maybe Slice)
-  deriving Show
-
 port :: Parser Port
 port = do { name <- sym
           ; bits <- optionMaybe slice
           ; return $ Port name bits } <?> "port"
 
-portList :: Parser [Port]
-portList = T.parens lexer (commaSep port) <?> "port list"
+portList :: Parser [Ranged Port]
+portList = T.parens lexer (commaSep $ rangedParse port) <?> "port list"
 
+sourcePosToLCPos :: SourcePos -> LCPos
+sourcePosToLCPos sp = LCPos (sourceLine sp) (sourceColumn sp)
+
+rangedParse :: Parser a -> Parser (Ranged a)
+rangedParse p = do { lc0 <- sourcePosToLCPos <$> getPosition
+                   ; a <- p
+                   ; lc1 <- sourcePosToLCPos <$> getPosition
+                   ; return $ Ranged (LCRange lc0 lc1) a
+                   }
 
 {-
   In order to parse the internals of a "module", we need to parse
@@ -206,7 +220,7 @@ exprParens :: Parser Expression
 exprParens = T.parens lexer expression >>= return . ExprParens
 
 exprSlice :: Parser Expression
-exprSlice = do { e <- ExprAtom <$> atom <?> "atom"
+exprSlice = do { e <- rangedParse (ExprAtom <$> atom <?> "atom")
                ; s <- slice
                ; return $ ExprSlice e s }
 
@@ -215,18 +229,26 @@ exprConcat = T.braces lexer (commaSep expression) >>= return . ExprConcat
 
 exprReplicate :: Parser Expression
 exprReplicate =
-  T.braces lexer (do { count <- expression'
-                     ; value <- T.braces lexer expression <?> "replicand"
-                     ; return $ ExprReplicate count value })
+  braces (do { count <- expression'
+             ; value <- braces expression <?> "replicand"
+             ; return $ ExprReplicate count value })
+  where braces = T.braces lexer
 
-op :: String -> a -> Parser a
-op str tx = T.reservedOp lexer str >> return tx
+rangedOp :: String -> a -> Parser (Ranged a)
+rangedOp str a = rangedParse (T.reservedOp lexer str >> return a)
 
-unop :: String -> UnOp -> Operator String () Identity Expression
-unop str uo = Prefix $ op str (ExprUnOp uo)
+addUnOp :: Ranged UnOp -> Ranged Expression -> Ranged Expression
+addUnOp ruo re = wideRange ruo re (ExprUnOp ruo re)
 
-binop :: String -> BinOp -> Operator String () Identity Expression
-binop str bo = Infix (op str (ExprBinOp bo)) AssocLeft
+unop :: String -> UnOp -> Operator String () Identity (Ranged Expression)
+unop s uo = Prefix (rangedOp s uo >>= return . addUnOp)
+
+addBinOp :: Ranged BinOp ->
+            Ranged Expression -> Ranged Expression -> Ranged Expression
+addBinOp rbo re0 re1 = wideRange re0 re1 (ExprBinOp rbo re0 re1)
+
+binop :: String -> BinOp -> Operator String () Identity (Ranged Expression)
+binop s bo = Infix (rangedOp s bo >>= return . addBinOp) AssocLeft
 
 term :: Parser Expression
 term = (try (exprSlice <?> "sliced symbol")) <|>
@@ -253,19 +275,19 @@ table = [ [ unop "!" LogNot , unop "~" BitNot , unop "&" RedAnd
         , [ binop "||" LogOr ]
         ]
 
-expression' :: Parser Expression
+expression' :: Parser (Ranged Expression)
 expression' =
-  buildExpressionParser table term
+  buildExpressionParser table (rangedParse term)
 
-condTail :: Expression -> Parser Expression
+condTail :: Ranged Expression -> Parser (Ranged Expression)
 condTail cond = do { T.reservedOp lexer "?" <?> "operator"
-                   ; iftrue <- expression <?> "expression if true"
+                   ; e0 <- expression <?> "expression if true"
                    ; T.reservedOp lexer ":"
-                   ; iffalse <- expression <?> "expression if false"
-                   ; return $ ExprCond cond iftrue iffalse
+                   ; e1 <- expression <?> "expression if false"
+                   ; return $ wideRange cond e1 (ExprCond cond e0 e1)
                    }
 
-expression :: Parser Expression
+expression :: Parser (Ranged Expression)
 expression = do { a <- expression' <?> "expression"
                 ; condTail a <|> return a }
 
@@ -277,12 +299,13 @@ expression = do { a <- expression' <?> "expression"
 -}
 
 trigger :: Parser Stmt
-trigger = StmtTrigger <$> (T.reserved lexer "trigger" >>
-                           (sym <?> "variable name for trigger") <*
-                           T.semi lexer)
+trigger =
+  StmtTrigger <$> (T.reserved lexer "trigger" >>
+                   rangedParse (sym <?> "variable name for trigger") <*
+                   T.semi lexer)
 
 assignment :: Parser Stmt
-assignment = do { x <- sym
+assignment = do { x <- rangedParse sym
                 ; T.reservedOp lexer "="
                 ; rhs <- expression <?> "expression for assignment RHS"
                 ; T.semi lexer
@@ -291,16 +314,17 @@ assignment = do { x <- sym
 record :: Parser Stmt
 record = do { T.reserved lexer "record"
             ; e <- expression
-            ; name <- optionMaybe (T.reserved lexer "as" >> sym)
+            ; name <- optionMaybe (T.reserved lexer "as" >> rangedParse sym)
             ; T.semi lexer
             ; return $ StmtRecord e name }
 
 when :: Parser Stmt
 when = do { T.reserved lexer "when"
-          ; a <- sym
-          ; b <- T.braces lexer (many statement) <|> (singleton <$> statement)
+          ; a <- rangedParse sym
+          ; b <- T.braces lexer (many rngstmt) <|> (singleton <$> rngstmt)
           ; return $ StmtWhen a b }
   where singleton a = [a]
+        rngstmt = rangedParse statement
 
 statement :: Parser Stmt
 statement = trigger <|> record <|> when <|> assignment
@@ -310,9 +334,9 @@ statement = trigger <|> record <|> when <|> assignment
 -}
 module' :: Parser TLStmt
 module' = do { T.reserved lexer "module"
-         ; name <- sym
+         ; name <- rangedParse sym
          ; pl <- portList
-         ; stmts <- T.braces lexer (many statement)
+         ; stmts <- T.braces lexer (many $ rangedParse statement)
          ; return $ Module name pl stmts
          }
 
@@ -324,17 +348,18 @@ dottedSymbol = do { mod <- sym
                   }
 
 coverList :: Parser CoverList
-coverList = CoverList <$> T.braces lexer (commaSep integer)
+coverList = CoverList <$> T.braces lexer (commaSep $ rangedParse integer)
 
 cover :: Parser TLStmt
 cover = do { T.reserved lexer "cover"
-           ; name <- dottedSymbol
+           ; name <- rangedParse dottedSymbol
            ; clist <- optionMaybe coverList
            ; return $ Cover name clist
            }
 
 cross :: Parser TLStmt
-cross = T.reserved lexer "cover" >> (Cross <$> many1 dottedSymbol)
+cross = T.reserved lexer "cover" >>
+        (Cross <$> many1 (rangedParse dottedSymbol))
 
 tlStmt :: Parser TLStmt
 tlStmt = module' <|> cover <|> cross
