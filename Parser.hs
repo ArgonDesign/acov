@@ -6,6 +6,7 @@ module Parser
   , CoverList(..)
   , Stmt(..)
   , TLStmt(..)
+  , parseScript
   ) where
 
 import Data.Char (digitToInt)
@@ -13,10 +14,12 @@ import Data.Functor.Identity (Identity)
 import qualified Text.Parsec.Language as L
 import qualified Text.Parsec.Token as T
 import Text.Parsec
+import Text.Parsec.Error
 import Text.Parsec.Expr
 import Text.Parsec.Pos
 import Text.Parsec.String
 
+import ErrorsOr
 import Ranged
 
 {-
@@ -206,6 +209,10 @@ portList = T.parens lexer (commaSep $ rangedParse port) <?> "port list"
 sourcePosToLCPos :: SourcePos -> LCPos
 sourcePosToLCPos sp = LCPos (sourceLine sp) (sourceColumn sp)
 
+sourcePosToLCRange :: SourcePos -> LCRange
+sourcePosToLCRange sp = LCRange lcp lcp
+  where lcp = sourcePosToLCPos sp
+
 rangedParse :: Parser a -> Parser (Ranged a)
 rangedParse p = do { lc0 <- sourcePosToLCPos <$> getPosition
                    ; a <- p
@@ -374,3 +381,13 @@ tlStmt = module' <|> cover <|> cross
 
 script :: Parser [TLStmt]
 script = many tlStmt
+
+makeErrors :: ParseError -> [Ranged String]
+makeErrors pe = map mke (errorMessages pe)
+  where mke = Ranged (sourcePosToLCRange (errorPos pe)) . messageString
+
+parseScript :: FilePath -> String -> ErrorsOr [TLStmt]
+parseScript path str =
+  case parse script path str of
+    Left pe -> bad (makeErrors pe)
+    Right stmts -> good stmts

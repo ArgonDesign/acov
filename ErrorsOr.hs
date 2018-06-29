@@ -1,7 +1,6 @@
 module ErrorsOr
   ( ErrorsOr
-  , bad
-  , good
+  , bad , bad1 , good
   , mapEO
   , reportEO
   ) where
@@ -13,11 +12,14 @@ import System.IO
 newtype ErrorsOr a = ErrorsOr (Either [Ranged String] a)
   deriving Show
 
-bad :: Ranged String -> ErrorsOr a
-bad rstr = ErrorsOr $ Left [rstr]
+bad :: [Ranged String] -> ErrorsOr a
+bad = ErrorsOr . Left
+
+bad1 :: Ranged String -> ErrorsOr a
+bad1 rs = ErrorsOr $ Left [rs]
 
 good :: a -> ErrorsOr a
-good a = ErrorsOr $ Right a
+good = ErrorsOr . Right
 
 mapEO :: (a -> ErrorsOr b) -> [a] -> ErrorsOr [b]
 mapEO f as =

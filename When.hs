@@ -30,11 +30,11 @@ readWhen' :: Ranged P.Symbol -> Ranged P.Stmt -> ErrorsOr ModStmt
 readWhen' rguard (Ranged rng (P.StmtRecord re rsym)) =
   good $ Record (Just rguard) re rsym
 readWhen' _ rstmt =
-  bad (copyRange rstmt "non-record statement in a when block")
+  bad1 (copyRange rstmt "non-record statement in a when block")
 
 readWhen :: Ranged P.Symbol -> [Ranged P.Stmt] -> ErrorsOr [ModStmt]
 readWhen (Ranged rng (P.Symbol sym)) [] =
-  bad (Ranged rng $ "when block has no guarded record statements.")
+  bad1 (Ranged rng $ "when block has no guarded record statements.")
 readWhen rsym as = mapEO (readWhen' rsym) as
 
 readStmt :: P.Stmt -> ErrorsOr [ModStmt]
@@ -51,5 +51,5 @@ readTLStmt (P.Module name ports stmts) = Module name ports <$> readStmts stmts
 readTLStmt (P.Cover name clist) = good (Cover name clist)
 readTLStmt (P.Cross names) = good (Cross names)
 
-readScript :: [P.TLStmt] -> ErrorsOr Script
-readScript = fmap Script . mapEO readTLStmt
+run :: [P.TLStmt] -> ErrorsOr Script
+run = fmap Script . mapEO readTLStmt
