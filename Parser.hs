@@ -380,14 +380,16 @@ tlStmt :: Parser TLStmt
 tlStmt = module' <|> cover <|> cross
 
 script :: Parser [TLStmt]
-script = many tlStmt
+script = many tlStmt <* eof
 
-makeErrors :: ParseError -> [Ranged String]
-makeErrors pe = map mke (errorMessages pe)
-  where mke = Ranged (sourcePosToLCRange (errorPos pe)) . messageString
+makeErrors :: ParseError -> Ranged String
+makeErrors pe = Ranged (sourcePosToLCRange (errorPos pe)) $
+                showErrorMessages "or" "unknown parse error"
+                                  "expecting" "unexpected" "end of input"
+                                  (errorMessages pe)
 
 parseScript :: FilePath -> String -> ErrorsOr [TLStmt]
 parseScript path str =
   case parse script path str of
-    Left pe -> bad (makeErrors pe)
+    Left pe -> bad1 (makeErrors pe)
     Right stmts -> good stmts
