@@ -3,9 +3,12 @@ module ErrorsOr
   , bad
   , good
   , mapEO
+  , reportEO
   ) where
 
 import Ranged
+import System.Exit
+import System.IO
 
 newtype ErrorsOr a = ErrorsOr (Either [Ranged String] a)
   deriving Show
@@ -29,6 +32,17 @@ mapEO f as =
             ErrorsOr (Right b) ->
               case ebs of Left errs -> Left errs
                           Right bs -> Right (b : bs)
+
+showStart :: LCRange -> String
+showStart (LCRange (LCPos l c) _) = show l ++ ":" ++ show c
+
+reportError :: FilePath -> Ranged String -> IO ()
+reportError path (Ranged rng str) =
+  hPutStr stderr (path ++ ":" ++ showStart rng ++ ": " ++ str ++ "\n")
+
+reportEO :: FilePath -> ErrorsOr a -> IO a
+reportEO path (ErrorsOr (Left errs)) = mapM_ (reportError path) errs >> exitFailure
+reportEO _ (ErrorsOr (Right a)) = return a
 
 instance Functor ErrorsOr where
   fmap f (ErrorsOr (Left errs)) = ErrorsOr $ Left errs
