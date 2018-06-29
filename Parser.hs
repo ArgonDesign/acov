@@ -95,7 +95,8 @@ data Atom = AtomSym Symbol
 
 data Expression = ExprAtom Atom
                 | ExprParens (Ranged Expression)
-                | ExprSlice (Ranged Expression) Slice
+                | ExprSel (Ranged Expression)
+                  (Ranged Expression) (Maybe (Ranged Expression))
                 | ExprConcat [Ranged Expression]
                 | ExprReplicate (Ranged Expression) (Ranged Expression)
                 | ExprUnOp (Ranged UnOp) (Ranged Expression)
@@ -231,13 +232,25 @@ atom :: Parser Atom
 atom = (AtomSym <$> sym <?> "identifier") <|>
        (AtomInt <$> integer <?> "integer")
 
+exprAtom :: Parser Expression
+exprAtom = ExprAtom <$> atom <?> "atom"
+
 exprParens :: Parser Expression
 exprParens = T.parens lexer expression >>= return . ExprParens
 
-exprSlice :: Parser Expression
-exprSlice = do { e <- rangedParse (ExprAtom <$> atom <?> "atom")
-               ; s <- slice
-               ; return $ ExprSlice e s }
+exprSelInternals :: Parser (Ranged Expression, Maybe (Ranged Expression))
+exprSelInternals =
+  do { top <- expression
+     ; bot <- optionMaybe (T.reservedOp lexer ":" >> expression)
+     ; return (top, bot)
+     }
+
+-- Matches foo [a : b] or foo [a]
+exprSel :: Parser Expression
+exprSel = do { e <- rangedParse exprAtom
+             ; (t, b) <- T.brackets lexer exprSelInternals
+             ; return $ ExprSel e t b
+             }
 
 exprConcat :: Parser Expression
 exprConcat = T.braces lexer (commaSep expression) >>= return . ExprConcat
@@ -266,8 +279,7 @@ binop :: String -> BinOp -> Operator String () Identity (Ranged Expression)
 binop s bo = Infix (rangedOp s bo >>= return . addBinOp) AssocLeft
 
 term :: Parser Expression
-term = (try (exprSlice <?> "sliced symbol")) <|>
-       (ExprAtom <$> atom <?> "atom") <|>
+term = (try exprSel) <|> exprAtom <|>
        (exprParens <?> "parenthesized expression") <|>
        (try (exprConcat <?> "concatenation")) <|>
        (exprReplicate <?> "replicated expression")
@@ -380,7 +392,7 @@ tlStmt :: Parser TLStmt
 tlStmt = module' <|> cover <|> cross
 
 script :: Parser [TLStmt]
-script = many tlStmt <* eof
+script = T.whiteSpace lexer >> many tlStmt <* eof
 
 makeErrors :: ParseError -> Ranged String
 makeErrors pe = Ranged (sourcePosToLCRange (errorPos pe)) $
