@@ -146,6 +146,9 @@ lexer = T.makeTokenParser language
 sym :: Parser Symbol
 sym = Symbol <$> T.identifier lexer
 
+semi :: Parser ()
+semi = T.semi lexer >> return ()
+
 commaSep :: Parser a -> Parser [a]
 commaSep p = sepBy p (T.reservedOp lexer ",")
 
@@ -329,20 +332,20 @@ trigger :: Parser Stmt
 trigger =
   StmtTrigger <$> (T.reserved lexer "trigger" >>
                    rangedParse (sym <?> "variable name for trigger") <*
-                   T.semi lexer)
+                   semi)
 
 assignment :: Parser Stmt
 assignment = do { x <- rangedParse sym
                 ; T.reservedOp lexer "="
                 ; rhs <- expression <?> "expression for assignment RHS"
-                ; T.semi lexer
+                ; semi
                 ; return $ StmtAssign x rhs }
 
 record :: Parser Stmt
 record = do { T.reserved lexer "record"
             ; e <- expression
             ; name <- optionMaybe (T.reserved lexer "as" >> rangedParse sym)
-            ; T.semi lexer
+            ; semi
             ; return $ StmtRecord e name }
 
 when :: Parser Stmt
@@ -381,12 +384,13 @@ cover :: Parser TLStmt
 cover = do { T.reserved lexer "cover"
            ; name <- rangedParse dottedSymbol
            ; clist <- optionMaybe coverList
+           ; semi
            ; return $ Cover name clist
            }
 
 cross :: Parser TLStmt
-cross = T.reserved lexer "cover" >>
-        (Cross <$> many1 (rangedParse dottedSymbol))
+cross = T.reserved lexer "cross" >>
+        (Cross <$> many1 (rangedParse dottedSymbol)) <* semi
 
 tlStmt :: Parser TLStmt
 tlStmt = module' <|> cover <|> cross
