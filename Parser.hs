@@ -9,7 +9,9 @@ module Parser
   , parseScript
   ) where
 
+import Control.Applicative ((<*))
 import Data.Char (digitToInt)
+import Data.Functor ((<$>))
 import Data.Functor.Identity (Identity)
 import qualified Text.Parsec.Language as L
 import qualified Text.Parsec.Token as T

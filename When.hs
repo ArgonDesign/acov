@@ -7,6 +7,7 @@ module When where
   unchanged.
 -}
 
+import Data.Functor ((<$>))
 import qualified Parser as P
 import ErrorsOr
 import Ranged

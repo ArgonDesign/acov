@@ -1,6 +1,6 @@
 module Main where
 
-import Data.Semigroup ((<>))
+import Data.Monoid ((<>))
 import Options.Applicative
 import System.Exit
 
