@@ -30,14 +30,15 @@ instance Functor ErrorsOr where
 
 instance Applicative ErrorsOr where
   pure a = good a
-  liftA2 f (ErrorsOr (Left e0)) (ErrorsOr (Left e1)) = bad $ e0 ++ e1
-  liftA2 f (ErrorsOr (Left e0)) (ErrorsOr (Right b)) = bad e0
-  liftA2 f (ErrorsOr (Right a)) (ErrorsOr (Left e1)) = bad e1
-  liftA2 f (ErrorsOr (Right a)) (ErrorsOr (Right b)) = good $ f a b
+  ErrorsOr (Left e0) <*> ErrorsOr (Left e1) = bad $ e0 ++ e1
+  ErrorsOr (Left e0) <*> ErrorsOr (Right a) = bad $ e0
+  ErrorsOr (Right f) <*> ErrorsOr (Left e1) = bad $ e1
+  ErrorsOr (Right f) <*> ErrorsOr (Right a) = good $ f a
 
 instance Monad ErrorsOr where
   ErrorsOr (Left errs) >>= f = bad errs
   ErrorsOr (Right a) >>= f = f a
+  return = good
 
 mapEO :: (a -> ErrorsOr b) -> [a] -> ErrorsOr [b]
 mapEO f as =
