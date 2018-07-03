@@ -7,6 +7,7 @@ import System.Exit
 import ErrorsOr (ErrorsOr, reportEO)
 import Parser (parseScript)
 import qualified When
+import qualified Symbols
 
 data Args = Args
   { input :: FilePath
@@ -29,11 +30,10 @@ runPass path pass a = reportEO path (pass a)
 run :: Args -> IO ()
 run args = readFile path >>=
            runPass path (parseScript path) >>=
-           runPass path When.run >>
+           runPass path When.run >>=
+           runPass path Symbols.run >>
            exitSuccess
   where path = input args
 
 main :: IO ()
 main = execParser mainInfo >>= run
-
--- readFile (input args)

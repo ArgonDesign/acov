@@ -1,13 +1,16 @@
 module ErrorsOr
   ( ErrorsOr
   , bad , bad1 , good
-  , mapEO
+  , mapEO , foldEO
   , reportEO
   ) where
 
-import Ranged
+import Control.Applicative
+import Data.List
 import System.Exit
 import System.IO
+
+import Ranged
 
 newtype ErrorsOr a = ErrorsOr (Either [Ranged String] a)
   deriving Show
@@ -20,6 +23,21 @@ bad1 rs = ErrorsOr $ Left [rs]
 
 good :: a -> ErrorsOr a
 good = ErrorsOr . Right
+
+instance Functor ErrorsOr where
+  fmap f (ErrorsOr (Left errs)) = bad errs
+  fmap f (ErrorsOr (Right a)) = good (f a)
+
+instance Applicative ErrorsOr where
+  pure a = good a
+  liftA2 f (ErrorsOr (Left e0)) (ErrorsOr (Left e1)) = bad $ e0 ++ e1
+  liftA2 f (ErrorsOr (Left e0)) (ErrorsOr (Right b)) = bad e0
+  liftA2 f (ErrorsOr (Right a)) (ErrorsOr (Left e1)) = bad e1
+  liftA2 f (ErrorsOr (Right a)) (ErrorsOr (Right b)) = good $ f a b
+
+instance Monad ErrorsOr where
+  ErrorsOr (Left errs) >>= f = bad errs
+  ErrorsOr (Right a) >>= f = f a
 
 mapEO :: (a -> ErrorsOr b) -> [a] -> ErrorsOr [b]
 mapEO f as =
@@ -35,6 +53,18 @@ mapEO f as =
               case ebs of Left errs -> Left errs
                           Right bs -> Right (b : bs)
 
+updateEO :: (b -> a -> ErrorsOr b) ->
+            ([Ranged String], b) -> a -> ([Ranged String], b)
+updateEO f (errs, b) a =
+  case f b a of
+    ErrorsOr (Left errs') -> (errs' ++ errs, b)
+    ErrorsOr (Right b') -> (errs, b')
+
+foldEO :: (b -> a -> ErrorsOr b) -> b -> [a] -> ErrorsOr b
+foldEO f b0 as =
+  if null errs then good b1 else bad (reverse errs)
+  where (errs, b1) = foldl' (updateEO f) ([], b0) as
+
 showStart :: LCRange -> String
 showStart (LCRange (LCPos l c) _) = show l ++ ":" ++ show c
 
@@ -46,6 +76,3 @@ reportEO :: FilePath -> ErrorsOr a -> IO a
 reportEO path (ErrorsOr (Left errs)) = mapM_ (reportError path) errs >> exitFailure
 reportEO _ (ErrorsOr (Right a)) = return a
 
-instance Functor ErrorsOr where
-  fmap f (ErrorsOr (Left errs)) = ErrorsOr $ Left errs
-  fmap f (ErrorsOr (Right a)) = ErrorsOr $ Right $ f a

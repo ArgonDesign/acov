@@ -6,6 +6,10 @@ module Parser
   , CoverList(..)
   , Stmt(..)
   , TLStmt(..)
+  , VInt(..)
+  , UnOp(..)
+  , BinOp(..)
+  , Slice(..)
   , Atom(..)
   , parseScript
   ) where
@@ -52,7 +56,7 @@ data VInt = VInt (Maybe Integer) Bool Integer
   deriving Show
 
 newtype Symbol = Symbol String
-  deriving Show
+  deriving (Show, Eq, Ord)
 
 data DottedSymbol = DottedSymbol Symbol Symbol
   deriving Show
