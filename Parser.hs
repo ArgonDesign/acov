@@ -6,6 +6,7 @@ module Parser
   , CoverList(..)
   , Stmt(..)
   , TLStmt(..)
+  , Atom(..)
   , parseScript
   ) where
 

@@ -16,7 +16,7 @@ import Ranged
 data ModStmt = Trigger (Ranged P.Symbol)
              | Assign (Ranged P.Symbol) (Ranged P.Expression)
              | Record (Maybe (Ranged P.Symbol))
-               (Ranged P.Expression) (Maybe (Ranged P.Symbol))
+               (Ranged P.Expression) (Ranged P.Symbol)
   deriving Show
 
 data TLStmt = Module (Ranged P.Symbol) [Ranged P.Port] [ModStmt]
@@ -27,9 +27,26 @@ data TLStmt = Module (Ranged P.Symbol) [Ranged P.Port] [ModStmt]
 newtype Script = Script [TLStmt]
   deriving Show
 
+{-
+  readRecord is called to make sense of a record statement. This might
+  be inside a when block. We check that either there is an explicit
+  record name or the thing being recorded is a symbol (in which case
+  the record name defaults to the symbol name).
+-}
+readRecord :: Maybe (Ranged P.Symbol) ->
+              Ranged P.Expression -> Maybe (Ranged P.Symbol) ->
+              ErrorsOr ModStmt
+readRecord when rexpr (Just rname) = good $ Record when rexpr rname
+readRecord when rexpr Nothing =
+  case rangedData rexpr of
+    P.ExprAtom (P.AtomSym sym) ->
+      good $ Record when rexpr (copyRange rexpr sym)
+    _ -> bad1 (copyRange rexpr
+               "record for non-symbol expression with no explicit name")
+
 readWhen' :: Ranged P.Symbol -> Ranged P.Stmt -> ErrorsOr ModStmt
-readWhen' rguard (Ranged rng (P.StmtRecord re rsym)) =
-  good $ Record (Just rguard) re rsym
+readWhen' rguard (Ranged _ (P.StmtRecord re rsym)) =
+  readRecord (Just rguard) re rsym
 readWhen' _ rstmt =
   bad1 (copyRange rstmt "non-record statement in a when block")
 
@@ -41,7 +58,7 @@ readWhen rsym as = mapEO (readWhen' rsym) as
 readStmt :: P.Stmt -> ErrorsOr [ModStmt]
 readStmt (P.StmtTrigger sym) = good [Trigger sym]
 readStmt (P.StmtAssign sym re) = good [Assign sym re]
-readStmt (P.StmtRecord re sym) = good [Record Nothing re sym]
+readStmt (P.StmtRecord re sym) = (\ x -> [x]) <$> readRecord Nothing re sym
 readStmt (P.StmtWhen sym stmts) = readWhen sym stmts
 
 readStmts :: [P.Stmt] -> ErrorsOr [ModStmt]
