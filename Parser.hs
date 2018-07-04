@@ -280,17 +280,17 @@ term = (try exprSel) <|> exprAtom <|>
 
 table = [ [ unop "!" LogNot , unop "~" BitNot , unop "&" RedAnd
           , unop "|" RedOr , unop "~&" RedNand , unop "~|" RedNor
-          , unop "^" RedXor , unop "~^" RedXNor , unop "^~" RedXNor ]
+          , unop "^" RedXor , unop "~^" RedXnor , unop "^~" RedXnor ]
         , [ unop "+" UPlus , unop "-" UMinus ]
         , [ binop "*" Times , binop "/" Divide , binop "%" Modulo ]
         , [ binop "+" Plus , binop "-" Minus ]
         , [ binop "<<" LShift , binop ">>" RShift ]
         , [ binop ">" Greater , binop ">=" GreaterEq
           , binop "<" Less , binop "<=" LessEq ]
-        , [ binop "==" LogEq , binop "!=" LogNEq ]
-        , [ binop "===" CaseEq , binop "!==" CaseNEq ]
+        , [ binop "==" LogEq , binop "!=" LogNeq ]
+        , [ binop "===" CaseEq , binop "!==" CaseNeq ]
         , [ binop "&" BitAnd ]
-        , [ binop "^" BitXor , binop "^~" BitXNor, binop "~^" BitXNor ]
+        , [ binop "^" BitXor , binop "^~" BitXnor, binop "~^" BitXnor ]
         , [ binop "|" BitOr ]
         , [ binop "&&" LogAnd ]
         , [ binop "||" LogOr ]

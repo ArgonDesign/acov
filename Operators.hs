@@ -4,7 +4,7 @@ module Operators
   ) where
 
 data UnOp = LogNot | BitNot
-          | RedAnd | RedOr | RedNand | RedNor | RedXor | RedXNor
+          | RedAnd | RedOr | RedNand | RedNor | RedXor | RedXnor
           | UPlus | UMinus
   deriving Show
 
@@ -12,10 +12,10 @@ data BinOp = Times | Divide | Modulo
            | Plus | Minus
            | LShift | RShift
            | Greater | GreaterEq | Less | LessEq
-           | LogEq | LogNEq
-           | CaseEq | CaseNEq
+           | LogEq | LogNeq
+           | CaseEq | CaseNeq
            | BitAnd
-           | BitXor | BitXNor
+           | BitXor | BitXnor
            | BitOr
            | LogAnd
            | LogOr
