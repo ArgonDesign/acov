@@ -1,5 +1,6 @@
 module Expressions
   ( run
+  , Expression(..)
   ) where
 
 import Control.Applicative
@@ -18,7 +19,7 @@ import Ranged
 -}
 data Expression = ExprSym S.Symbol
                 | ExprInt P.VInt
-                | ExprSel S.Symbol (Ranged Expression)
+                | ExprSel (Ranged S.Symbol) (Ranged Expression)
                   (Maybe (Ranged Expression))
                 | ExprConcat (Ranged Expression) [Ranged Expression]
                 | ExprReplicate Integer (Ranged Expression)
@@ -34,7 +35,18 @@ data ModStmt = Assign (Ranged S.Symbol) (Ranged Expression)
                (Ranged Expression) (Ranged S.Symbol)
   deriving Show
 
-data Module = Module S.ModSymbolTable [ModStmt]
+data Slice = Slice Integer Integer
+  deriving Show
+
+data ModSymbolTable = ModSymbolTable { mstMap :: Map.Map String S.ModSymIdx
+                                     , mstPorts :: S.SymbolArray (Ranged Slice)
+                                     , mstTriggers :: S.SymbolArray ()
+                                     , mstRMap :: Map.Map String S.Symbol
+                                     , mstRecords :: S.SymbolArray ()
+                                     }
+  deriving Show
+
+data Module = Module ModSymbolTable [ModStmt]
   deriving Show
 
 data Script = Script { scrMap :: Map.Map String S.Symbol
@@ -47,10 +59,10 @@ tightenAtom :: S.Atom -> Expression
 tightenAtom (S.AtomSym sym) = ExprSym sym
 tightenAtom (S.AtomInt int) = ExprInt int
 
-tightenSel' :: Ranged S.Expression -> ErrorsOr S.Symbol
+tightenSel' :: Ranged S.Expression -> ErrorsOr (Ranged S.Symbol)
 tightenSel' rse =
   case rangedData rse of
-    S.ExprAtom (S.AtomSym sym) -> good sym
+    S.ExprAtom (S.AtomSym sym) -> good $ copyRange rse sym
     _ -> bad1 (copyRange rse
                "bit selection applied to something other than a symbol.")
 
@@ -111,15 +123,45 @@ tightenModStmt (S.Assign lhs rhs) = Assign lhs <$> tighten rhs
 tightenModStmt (S.Record guard expr dest) =
   (\ e -> Record guard e dest) <$> tighten expr
 
+tightenBitSel :: P.Symbol -> LCRange -> P.VInt -> ErrorsOr Integer
+tightenBitSel psym rng (P.VInt width signed num) =
+  if isJust width then noGood " has a width."
+  else if signed then noGood " is explicitly signed."
+  else if num < 0 then noGood " is negative."
+  else good num
+  where noGood msg =
+          bad1 $ Ranged rng ("Bit selection for port `" ++ P.symName psym ++
+                             "': " ++ msg)
+
+tightenSlice :: P.Symbol -> Ranged (Maybe P.Slice) -> ErrorsOr (Ranged Slice)
+tightenSlice psym rslice =
+  copyRange rslice <$>
+  case rangedData rslice of
+    Nothing -> good $ Slice 0 0
+    Just (P.Slice va vb) ->
+      liftA2 Slice (tightenBitSel psym rng va) (tightenBitSel psym rng vb)
+  where rng = rangedRange rslice
+
+tightenSlices :: S.SymbolArray (Ranged (Maybe P.Slice)) ->
+                 ErrorsOr (S.SymbolArray (Ranged Slice))
+tightenSlices (S.SymbolArray slices) =
+  S.SymbolArray <$> amapEO (S.mapSE' tightenSlice) slices
+
+tightenMST :: S.ModSymbolTable -> ErrorsOr ModSymbolTable
+tightenMST smst =
+  do { slices <- tightenSlices (S.mstPorts smst)
+     ; return $
+       ModSymbolTable (S.mstMap smst) slices (S.mstTriggers smst)
+                      (S.mstRMap smst) (S.mstRecords smst)
+     }
+
 tightenModule :: S.Module -> ErrorsOr Module
 tightenModule (S.Module mst stmts) =
-  Module mst <$> mapEO tightenModStmt stmts
+  liftA2 Module (tightenMST mst) (mapEO tightenModStmt stmts)
 
 tightenModules :: S.SymbolArray S.Module -> ErrorsOr (S.SymbolArray Module)
 tightenModules (S.SymbolArray modules) =
-  S.SymbolArray <$> amapEO tightenSE modules
-  where tightenSE (S.SymbolEntry sym mod) =
-          S.SymbolEntry sym <$> tightenModule mod
+  S.SymbolArray <$> amapEO (S.mapSE tightenModule) modules
 
 run :: S.Script -> ErrorsOr Script
 run s = do { mods <- tightenModules $ S.scrModules s

@@ -1,5 +1,6 @@
 module Parser
   ( Symbol(..)
+  , symName
   , DottedSymbol(..)
   , Expression(..)
   , Port(..)
@@ -57,6 +58,9 @@ data VInt = VInt (Maybe Integer) Bool Integer
 
 newtype Symbol = Symbol String
   deriving (Show, Eq, Ord)
+
+symName :: Symbol -> String
+symName (Symbol name) = name
 
 data DottedSymbol = DottedSymbol Symbol Symbol
   deriving Show

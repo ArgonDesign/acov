@@ -4,12 +4,15 @@ module Symbols
   , Expression(..)
   , Atom(..)
   , ModSymbolTable(..)
+  , ModSymIdx(..)
   , SymbolArray(..)
   , SymbolEntry(..)
+  , mapSE , mapSE'
   , TLStmt(..)
   , ModStmt(..)
   , Module(..)
   , Script(..)
+  , symbolData
   ) where
 
 {-
@@ -91,11 +94,21 @@ data SymbolEntry a = SymbolEntry P.Symbol a
 symbolEntryData :: SymbolEntry a -> a
 symbolEntryData (SymbolEntry sym a) = a
 
+mapSE :: Functor f => (a -> f b) -> SymbolEntry a -> f (SymbolEntry b)
+mapSE f (SymbolEntry sym a) = SymbolEntry sym <$> f a
+
+mapSE' :: Functor f =>
+          (P.Symbol -> a -> f b) -> SymbolEntry a -> f (SymbolEntry b)
+mapSE' f (SymbolEntry sym a) = SymbolEntry sym <$> f sym a
+
 newtype SymbolArray a = SymbolArray (Array Int (SymbolEntry a))
   deriving Show
 
+symbolData :: SymbolArray a -> Symbol -> a
+symbolData (SymbolArray a) (Symbol i) = symbolEntryData (a ! i)
+
 data ModSymbolTable = ModSymbolTable { mstMap :: Map.Map String ModSymIdx
-                                     , mstPorts :: SymbolArray (Maybe P.Slice)
+                                     , mstPorts :: SymbolArray (Ranged (Maybe P.Slice))
                                      , mstTriggers :: SymbolArray ()
                                      , mstRMap :: Map.Map String Symbol
                                      , mstRecords :: SymbolArray ()
@@ -141,19 +154,17 @@ clMap f (CList n as) = CList n $ map f as
 clAt :: Symbol -> CList a -> a
 clAt (Symbol idx) (CList n as) = as !! (n - 1 - idx)
 
-data MSBuilder = MSBuilder { msbMap :: Map.Map String ModSymIdx
-                           , msbPorts :: CList (SymbolEntry (Maybe P.Slice))
-                           , msbTriggers :: CList P.Symbol
-                           , msbRMap :: Map.Map String Symbol
-                           , msbRecords :: CList P.Symbol
-                           , msbStatements :: [ModStmt]
-                           }
+data MSBuilder =
+  MSBuilder { msbMap :: Map.Map String ModSymIdx
+            , msbPorts :: CList (SymbolEntry (Ranged (Maybe P.Slice)))
+            , msbTriggers :: CList P.Symbol
+            , msbRMap :: Map.Map String Symbol
+            , msbRecords :: CList P.Symbol
+            , msbStatements :: [ModStmt]
+            }
 
 msbInit :: MSBuilder
 msbInit = MSBuilder Map.empty clEmpty clEmpty Map.empty clEmpty []
-
-psName :: P.Symbol -> String
-psName (P.Symbol name) = name
 
 {-
   Given an MSBuilder, we can intern expressions. Doing it with the
@@ -169,13 +180,14 @@ psName (P.Symbol name) = name
 msbAtom :: MSBuilder -> LCRange -> P.Atom -> ErrorsOr Expression
 msbAtom msb _ (P.AtomInt vint) = good $ ExprAtom (AtomInt vint)
 msbAtom msb rng (P.AtomSym psym) =
-  case Map.lookup (psName psym) (msbMap msb) of
-    Nothing -> bad1 $ Ranged rng $ "undeclared symbol: " ++ psName psym ++ "."
+  case Map.lookup (P.symName psym) (msbMap msb) of
+    Nothing -> bad1 $ (Ranged rng $
+                       "undeclared symbol: " ++ P.symName psym ++ ".")
     Just (ModSymIdx t sym) ->
       case t of
         PortType -> good $ ExprAtom (AtomSym sym)
         TriggerType -> bad1 (Ranged rng $
-                             "symbol `" ++ psName psym ++
+                             "symbol `" ++ P.symName psym ++
                              "' names a trigger, not a port.")
 
 msbParens :: MSBuilder -> Ranged P.Expression -> ErrorsOr Expression
@@ -231,16 +243,17 @@ msbExpression msb rexpr =
 
 addSym :: P.Symbol -> IType -> Int -> MSBuilder -> MSBuilder
 addSym psym typ n msb =
-  msb { msbMap = Map.insert (psName psym)
+  msb { msbMap = Map.insert (P.symName psym)
                  (ModSymIdx typ (Symbol n)) (msbMap msb) }
 
 msbTakePort :: MSBuilder -> Ranged P.Port -> ErrorsOr MSBuilder
 msbTakePort msb rp =
-  if Map.member (psName psym) (msbMap msb)
+  if Map.member (P.symName psym) (msbMap msb)
   then bad1 (copyRange rp $
-              "duplicate port in module: " ++ psName psym ++ ".")
+              "duplicate port in module: " ++ P.symName psym ++ ".")
   else good (addSym psym PortType nports msb
-              { msbPorts = clCons (SymbolEntry psym slice) ports })
+              { msbPorts =
+                clCons (SymbolEntry psym (copyRange rp slice)) ports })
   where P.Port psym slice = rangedData rp
         ports = msbPorts msb
         nports = clLen ports
@@ -250,7 +263,7 @@ msbTakePorts = foldEO msbTakePort
 
 msbTakeTrigger :: MSBuilder -> Ranged P.Symbol -> ErrorsOr MSBuilder
 msbTakeTrigger msb rpsym =
-  if Map.member (psName psym) (msbMap msb)
+  if Map.member (P.symName psym) (msbMap msb)
   then bad1 (copyRange rpsym
               "trigger declaration shadows existing symbol.")
   else good (addSym psym TriggerType ntrigs msb
@@ -269,7 +282,7 @@ msbTrigger msb rpsym =
         PortType -> bad1 $ (copyRange rpsym $
                             "assigning to port symbol `" ++ name ++ "'.")
         TriggerType -> good $ copyRange rpsym sym
-  where name = psName (rangedData rpsym)
+  where name = P.symName (rangedData rpsym)
 
 msbAddStmt :: ModStmt -> MSBuilder -> MSBuilder
 msbAddStmt stmt msb = msb { msbStatements = stmt : (msbStatements msb) }
@@ -291,7 +304,7 @@ msbTakeRecName msb rpsym =
                    , msbRecords = clCons psym (msbRecords msb)
                    })
   where psym = rangedData rpsym
-        name = psName psym
+        name = P.symName psym
         sym = Symbol (clLen (msbRecords msb))
 
 msbTakeRecord :: MSBuilder -> Maybe (Ranged P.Symbol) ->
@@ -358,7 +371,7 @@ tlbRegModule tlb rpname mod =
   else good (tlb { tlbMap = Map.insert name sym (tlbMap tlb)
                  , tlbModules = clCons symEntry (tlbModules tlb) })
   where pname = rangedData rpname
-        name = psName pname
+        name = P.symName pname
         sym = Symbol (clLen (tlbModules tlb))
         symEntry = SymbolEntry pname mod
 
@@ -369,16 +382,17 @@ tlbTakeModule tlb rpname ports stmts =
 
 tlbGetModule :: TLBuilder -> LCRange -> P.Symbol -> ErrorsOr (Symbol, Module)
 tlbGetModule tlb rng psym =
-  case Map.lookup (psName psym) (tlbMap tlb) of
-    Nothing -> bad1 (Ranged rng $ "no such module: `" ++ psName psym ++ "'.")
+  case Map.lookup (P.symName psym) (tlbMap tlb) of
+    Nothing -> bad1 (Ranged rng $
+                     "no such module: `" ++ P.symName psym ++ "'.")
     Just sym -> good (sym, symbolEntryData (clAt sym (tlbModules tlb)))
 
 modGetSymbol :: Module -> LCRange -> P.Symbol -> ErrorsOr Symbol
 modGetSymbol (Module mst _) rng psym =
-  case Map.lookup (psName psym) (mstRMap mst) of
+  case Map.lookup (P.symName psym) (mstRMap mst) of
     Nothing -> bad1 (Ranged rng $
                      "module does not define a record with name `" ++ 
-                     psName psym ++ "'.")
+                     P.symName psym ++ "'.")
     Just sym -> good sym
  
 tlbDottedSymbol :: TLBuilder -> Ranged P.DottedSymbol ->
