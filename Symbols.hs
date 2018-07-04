@@ -1,5 +1,15 @@
 module Symbols
   ( run
+  , Symbol(..)
+  , Expression(..)
+  , Atom(..)
+  , ModSymbolTable(..)
+  , SymbolArray(..)
+  , SymbolEntry(..)
+  , TLStmt(..)
+  , ModStmt(..)
+  , Module(..)
+  , Script(..)
   ) where
 
 {-
@@ -170,10 +180,6 @@ msbAtom msb rng (P.AtomSym psym) =
 
 msbParens :: MSBuilder -> Ranged P.Expression -> ErrorsOr Expression
 msbParens msb expr = ExprParens <$> msbExpression msb expr
-
-eoMaybe :: Maybe (ErrorsOr a) -> ErrorsOr (Maybe a)
-eoMaybe Nothing = good Nothing
-eoMaybe (Just eoa) = Just <$> eoa
 
 msbSel :: MSBuilder -> Ranged P.Expression ->
           Ranged P.Expression -> Maybe (Ranged P.Expression) ->

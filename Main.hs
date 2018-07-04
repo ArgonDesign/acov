@@ -8,6 +8,7 @@ import ErrorsOr (ErrorsOr, reportEO)
 import Parser (parseScript)
 import qualified When
 import qualified Symbols
+import qualified Expressions
 
 data Args = Args
   { input :: FilePath
@@ -31,7 +32,8 @@ run :: Args -> IO ()
 run args = readFile path >>=
            runPass path (parseScript path) >>=
            runPass path When.run >>=
-           runPass path Symbols.run >>
+           runPass path Symbols.run >>=
+           runPass path Expressions.run >>
            exitSuccess
   where path = input args
 

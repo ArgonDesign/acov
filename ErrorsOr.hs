@@ -1,12 +1,14 @@
 module ErrorsOr
   ( ErrorsOr
   , bad , bad1 , good
-  , mapEO , foldEO
+  , foldEO , mapEO , amapEO
+  , eoMaybe
   , reportEO
   ) where
 
 import Control.Applicative
-import Data.List
+import Data.Array
+import qualified Data.Foldable as F
 import System.Exit
 import System.IO
 
@@ -40,6 +42,18 @@ instance Monad ErrorsOr where
   ErrorsOr (Right a) >>= f = f a
   return = good
 
+updateEO :: (b -> a -> ErrorsOr b) ->
+            ([Ranged String], b) -> a -> ([Ranged String], b)
+updateEO f (errs, b) a =
+  case f b a of
+    ErrorsOr (Left errs') -> (errs' ++ errs, b)
+    ErrorsOr (Right b') -> (errs, b')
+
+foldEO :: F.Foldable t => (b -> a -> ErrorsOr b) -> b -> t a -> ErrorsOr b
+foldEO f b0 as =
+  if null errs then good b1 else bad (reverse errs)
+  where (errs, b1) = F.foldl' (updateEO f) ([], b0) as
+
 mapEO :: (a -> ErrorsOr b) -> [a] -> ErrorsOr [b]
 mapEO f as =
   case foldr take (Right []) as of
@@ -54,17 +68,15 @@ mapEO f as =
               case ebs of Left errs -> Left errs
                           Right bs -> Right (b : bs)
 
-updateEO :: (b -> a -> ErrorsOr b) ->
-            ([Ranged String], b) -> a -> ([Ranged String], b)
-updateEO f (errs, b) a =
-  case f b a of
-    ErrorsOr (Left errs') -> (errs' ++ errs, b)
-    ErrorsOr (Right b') -> (errs, b')
+amapEO :: Ix i =>
+          (e' -> ErrorsOr e) -> Array i e' -> ErrorsOr (Array i e)
+amapEO f arr =
+  foldEO map1 [] arr >>= (return . listArray (bounds arr) . reverse)
+  where map1 bs a = do { b <- f a; return $ b : bs }
 
-foldEO :: (b -> a -> ErrorsOr b) -> b -> [a] -> ErrorsOr b
-foldEO f b0 as =
-  if null errs then good b1 else bad (reverse errs)
-  where (errs, b1) = foldl' (updateEO f) ([], b0) as
+eoMaybe :: Maybe (ErrorsOr a) -> ErrorsOr (Maybe a)
+eoMaybe Nothing = good Nothing
+eoMaybe (Just eoa) = Just <$> eoa
 
 showStart :: LCRange -> String
 showStart (LCRange (LCPos l c) _) = show l ++ ":" ++ show c
@@ -76,4 +88,3 @@ reportError path (Ranged rng str) =
 reportEO :: FilePath -> ErrorsOr a -> IO a
 reportEO path (ErrorsOr (Left errs)) = mapM_ (reportError path) errs >> exitFailure
 reportEO _ (ErrorsOr (Right a)) = return a
-
