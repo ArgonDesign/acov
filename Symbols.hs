@@ -34,6 +34,7 @@ import Data.Array
 import qualified Parser as P
 import qualified When as W
 import ErrorsOr
+import Operators
 import Ranged
 
 newtype Symbol = Symbol Int
@@ -52,8 +53,8 @@ data Expression = ExprAtom Atom
                   (Ranged Expression) (Maybe (Ranged Expression))
                 | ExprConcat [Ranged Expression]
                 | ExprReplicate (Ranged Expression) (Ranged Expression)
-                | ExprUnOp (Ranged P.UnOp) (Ranged Expression)
-                | ExprBinOp (Ranged P.BinOp)
+                | ExprUnOp (Ranged UnOp) (Ranged Expression)
+                | ExprBinOp (Ranged BinOp)
                   (Ranged Expression) (Ranged Expression)
                 | ExprCond (Ranged Expression)
                   (Ranged Expression) (Ranged Expression)
@@ -208,11 +209,11 @@ msbReplicate :: MSBuilder -> Ranged P.Expression ->
 msbReplicate msb count val = liftA2 ExprReplicate (intern count) (intern val)
   where intern = msbExpression msb
 
-msbUnOp :: MSBuilder -> Ranged P.UnOp -> Ranged P.Expression ->
+msbUnOp :: MSBuilder -> Ranged UnOp -> Ranged P.Expression ->
            ErrorsOr Expression
 msbUnOp msb unop expr = ExprUnOp unop <$> msbExpression msb expr
 
-msbBinOp :: MSBuilder -> Ranged P.BinOp -> Ranged P.Expression ->
+msbBinOp :: MSBuilder -> Ranged BinOp -> Ranged P.Expression ->
             Ranged P.Expression -> ErrorsOr Expression
 msbBinOp msb binop e0 e1 = liftA2 (ExprBinOp binop) (intern e0) (intern e1)
   where intern = msbExpression msb

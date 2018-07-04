@@ -1,6 +1,9 @@
 module Expressions
   ( run
   , Expression(..)
+  , ModSymbolTable(..)
+  , Slice(..)
+  , sliceWidth
   ) where
 
 import Control.Applicative
@@ -10,6 +13,7 @@ import qualified Data.Map.Strict as Map
 import qualified Symbols as S
 import qualified Parser as P
 import ErrorsOr
+import Operators
 import Ranged
 
 {-
@@ -23,8 +27,8 @@ data Expression = ExprSym S.Symbol
                   (Maybe (Ranged Expression))
                 | ExprConcat (Ranged Expression) [Ranged Expression]
                 | ExprReplicate Integer (Ranged Expression)
-                | ExprUnOp (Ranged P.UnOp) (Ranged Expression)
-                | ExprBinOp (Ranged P.BinOp)
+                | ExprUnOp (Ranged UnOp) (Ranged Expression)
+                | ExprBinOp (Ranged BinOp)
                   (Ranged Expression) (Ranged Expression)
                 | ExprCond (Ranged Expression)
                   (Ranged Expression) (Ranged Expression)
@@ -37,6 +41,9 @@ data ModStmt = Assign (Ranged S.Symbol) (Ranged Expression)
 
 data Slice = Slice Integer Integer
   deriving Show
+
+sliceWidth :: Slice -> Integer
+sliceWidth (Slice a b) = 1 + (if a < b then b - a else a - b)
 
 data ModSymbolTable = ModSymbolTable { mstMap :: Map.Map String S.ModSymIdx
                                      , mstPorts :: S.SymbolArray (Ranged Slice)
@@ -93,10 +100,10 @@ tightenReplicate :: Ranged S.Expression -> Ranged S.Expression ->
 tightenReplicate count val =
   liftA2 ExprReplicate (tightenRepCount count) (tighten val)
 
-tightenUnOp :: Ranged P.UnOp -> Ranged S.Expression -> ErrorsOr Expression
+tightenUnOp :: Ranged UnOp -> Ranged S.Expression -> ErrorsOr Expression
 tightenUnOp uo se = ExprUnOp uo <$> tighten se
 
-tightenBinOp :: Ranged P.BinOp -> Ranged S.Expression -> Ranged S.Expression ->
+tightenBinOp :: Ranged BinOp -> Ranged S.Expression -> Ranged S.Expression ->
                 ErrorsOr Expression
 tightenBinOp bo se0 se1 = liftA2 (ExprBinOp bo) (tighten se0) (tighten se1)
 

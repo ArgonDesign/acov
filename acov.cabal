@@ -19,6 +19,7 @@ executable acov
   main-is:             Main.hs
   other-modules:       Ranged
                      , ErrorsOr
+                     , Operators
                      , Parser
                      , When
                      , Symbols

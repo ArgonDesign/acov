@@ -8,8 +8,6 @@ module Parser
   , Stmt(..)
   , TLStmt(..)
   , VInt(..)
-  , UnOp(..)
-  , BinOp(..)
   , Slice(..)
   , Atom(..)
   , parseScript
@@ -28,6 +26,7 @@ import Text.Parsec.Pos
 import Text.Parsec.String
 
 import ErrorsOr
+import Operators
 import Ranged
 
 {-
@@ -80,24 +79,6 @@ data Stmt = StmtTrigger (Ranged Symbol)
           | StmtAssign (Ranged Symbol) (Ranged Expression)
           | StmtRecord (Ranged Expression) (Maybe (Ranged Symbol))
           | StmtWhen (Ranged Symbol) [Ranged Stmt]
-  deriving Show
-
-data UnOp = LogNot | BitNot
-          | RedAnd | RedOr | RedNand | RedNor | RedXor | RedXNor
-          | UPlus | UMinus
-  deriving Show
-
-data BinOp = Times | Divide | Modulo
-           | Plus | Minus
-           | LShift | RShift
-           | Greater | GreaterEq | Less | LessEq
-           | LogEq | LogNEq
-           | CaseEq | CaseNEq
-           | BitAnd
-           | BitXor | BitXNor
-           | BitOr
-           | LogAnd
-           | LogOr
   deriving Show
 
 data Atom = AtomSym Symbol
