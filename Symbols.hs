@@ -35,6 +35,7 @@ import qualified Parser as P
 import qualified When as W
 import ErrorsOr
 import Operators
+import VInt
 import Ranged
 
 newtype Symbol = Symbol Int
@@ -44,7 +45,7 @@ data DottedSymbol = DottedSymbol Symbol Symbol
   deriving Show
 
 data Atom = AtomSym Symbol
-          | AtomInt P.VInt
+          | AtomInt VInt
   deriving Show
 
 data Expression = ExprAtom Atom

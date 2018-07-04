@@ -14,6 +14,7 @@ import qualified Symbols as S
 import qualified Parser as P
 import ErrorsOr
 import Operators
+import VInt
 import Ranged
 
 {-
@@ -22,7 +23,7 @@ import Ranged
   really is, that bit selects only apply to symbols and so on.
 -}
 data Expression = ExprSym S.Symbol
-                | ExprInt P.VInt
+                | ExprInt VInt
                 | ExprSel (Ranged S.Symbol) (Ranged Expression)
                   (Maybe (Ranged Expression))
                 | ExprConcat (Ranged Expression) [Ranged Expression]
@@ -39,10 +40,10 @@ data ModStmt = Assign (Ranged S.Symbol) (Ranged Expression)
                (Ranged Expression) (Ranged S.Symbol)
   deriving Show
 
-data Slice = Slice Integer Integer
+data Slice = Slice Int Int
   deriving Show
 
-sliceWidth :: Slice -> Integer
+sliceWidth :: Slice -> Int
 sliceWidth (Slice a b) = 1 + (if a < b then b - a else a - b)
 
 data ModSymbolTable = ModSymbolTable { mstMap :: Map.Map String S.ModSymIdx
@@ -86,14 +87,14 @@ tightenConcat rng (e : es) =
 tightenRepCount :: Ranged S.Expression -> ErrorsOr Integer
 tightenRepCount rse =
   case rangedData rse of
-    S.ExprAtom (S.AtomInt (P.VInt width signed num)) ->
-      if isJust width then noGood "Replication count can't have a width."
-      else if signed then noGood "Replication count shouldn't be signed."
-      else if num < 0 then noGood "Replication count shouldn't be negative."
-      else good num
-    otherwise ->
-      noGood "Replication count should be a literal integer."
-  where noGood msg = bad1 $ copyRange rse msg
+    S.ExprAtom (S.AtomInt int) ->
+      case checkVInt int $ baseVISchema { viAllowWidth = False
+                                        , viAllowSign = False
+                                        , viMinValue = Just 0 } of
+        Nothing -> good $ toInteger int
+        Just req -> noGood req
+    otherwise -> noGood "should be a literal integer."
+  where noGood req = bad1 $ copyRange rse ("Replication count " ++ req)
 
 tightenReplicate :: Ranged S.Expression -> Ranged S.Expression ->
                     ErrorsOr Expression
@@ -130,15 +131,14 @@ tightenModStmt (S.Assign lhs rhs) = Assign lhs <$> tighten rhs
 tightenModStmt (S.Record guard expr dest) =
   (\ e -> Record guard e dest) <$> tighten expr
 
-tightenBitSel :: P.Symbol -> LCRange -> P.VInt -> ErrorsOr Integer
-tightenBitSel psym rng (P.VInt width signed num) =
-  if isJust width then noGood " has a width."
-  else if signed then noGood " is explicitly signed."
-  else if num < 0 then noGood " is negative."
-  else good num
-  where noGood msg =
-          bad1 $ Ranged rng ("Bit selection for port `" ++ P.symName psym ++
-                             "': " ++ msg)
+tightenBitSel :: P.Symbol -> LCRange -> VInt -> ErrorsOr Integer
+tightenBitSel psym rng int =
+  case checkVInt int $ baseVISchema { viAllowWidth = False
+                                    , viAllowSign = False
+                                    , viMinValue = Just 0 } of
+    Nothing -> good $ toInteger int
+    Just req -> bad1 $ Ranged rng ("Bit selection for port `" ++
+                                   P.symName psym ++ "' " ++ req)
 
 tightenSlice :: P.Symbol -> Ranged (Maybe P.Slice) -> ErrorsOr (Ranged Slice)
 tightenSlice psym rslice =
@@ -146,7 +146,17 @@ tightenSlice psym rslice =
   case rangedData rslice of
     Nothing -> good $ Slice 0 0
     Just (P.Slice va vb) ->
-      liftA2 Slice (tightenBitSel psym rng va) (tightenBitSel psym rng vb)
+      do { (a, b) <- liftA2 (,)
+                     (tightenBitSel psym rng va) (tightenBitSel psym rng vb)
+         ; if abs (a - b) > toInteger (maxBound :: Int) then
+             bad1 $ (copyRange rslice
+                     "Difference in bit positions overflows an int.")
+           else if (- (max (abs a) (abs b))) < toInteger (minBound :: Int) then
+             bad1 $ (copyRange rslice
+                     "A bit position in the slice overflows an int.")
+           else
+             good $ Slice (fromInteger a) (fromInteger b)
+         }
   where rng = rangedRange rslice
 
 tightenSlices :: S.SymbolArray (Ranged (Maybe P.Slice)) ->

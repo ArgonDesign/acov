@@ -7,7 +7,6 @@ module Parser
   , CoverList(..)
   , Stmt(..)
   , TLStmt(..)
-  , VInt(..)
   , Slice(..)
   , Atom(..)
   , parseScript
@@ -26,8 +25,9 @@ import Text.Parsec.Pos
 import Text.Parsec.String
 
 import ErrorsOr
-import Operators
 import Ranged
+import Operators
+import VInt
 
 {-
 
@@ -52,9 +52,6 @@ import Ranged
      cover xxx.baz;
      cross xxx.foo xxx.baz;
 -}
-data VInt = VInt (Maybe Integer) Bool Integer
-  deriving Show
-
 newtype Symbol = Symbol String
   deriving (Show, Eq, Ord)
 
@@ -166,14 +163,16 @@ baseVInt w = do { char '\''
                         (char 'd' >> uint 10 digit) <|>
                         (char 'o' >> uint 8 octDigit) <|>
                         (char 'b' >> uint 2 binDigit))
-                ; return $ VInt w s n
+                ; case makeVInt w s n of
+                    Left err -> fail err
+                    Right vint -> return vint
                 }
   where binDigit = ((char '0' <|> char '1') <?> "binary digit")
 
 integer :: Parser VInt
 integer = (baseVInt Nothing) <|>
           do { d <- uint 10 digit ;
-               option (VInt Nothing False d) (baseVInt (Just d)) }
+               option (basicVInt d) (baseVInt (Just d)) }
 
 {-
   A "slice" is of the form [A:B] where we require both A and B to be

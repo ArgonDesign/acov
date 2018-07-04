@@ -20,6 +20,7 @@ executable acov
   other-modules:       Ranged
                      , ErrorsOr
                      , Operators
+                     , VInt
                      , Parser
                      , When
                      , Symbols
