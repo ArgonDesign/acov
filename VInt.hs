@@ -4,7 +4,7 @@ module VInt
   , vIntWidth
   , VISchema(..) , baseVISchema
   , checkVInt
-  , applyUnOp , applyBinOp
+  , applyUnOp , applyBinOp , applyCond
   ) where
 
 import Control.Exception.Base
@@ -241,3 +241,14 @@ applyBinOp op a b =
     Left $ "operator widths are incompatible."
   else
     clamp <$> applyBinOp' op a b
+
+applyCond :: VInt -> VInt -> VInt -> Either String VInt
+applyCond (VInt Nothing _ _) b c =
+  Left $ "test for conditional has no width."
+applyCond (VInt (Just x) sgn a) b c =
+  if x /= 1 then
+    Left $ "test for conditional has a width other than 1."
+  else
+    assert (not sgn)
+    assert (a == 0 || a == 1)
+    Right $ makeCombinedVInt b c (vIntValue (if a == 0 then c else b))

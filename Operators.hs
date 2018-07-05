@@ -1,5 +1,6 @@
 module Operators
   ( UnOp(..)
+  , unOpIsReduction
   , BinOp(..)
   ) where
 
@@ -20,3 +21,12 @@ data BinOp = Times | Divide | Modulo
            | LogAnd
            | LogOr
   deriving Show
+
+unOpIsReduction :: UnOp -> Bool
+unOpIsReduction RedAnd = True
+unOpIsReduction RedOr = True
+unOpIsReduction RedNand = True
+unOpIsReduction RedNor = True
+unOpIsReduction RedXor = True
+unOpIsReduction RedXnor = True
+unOpIsReduction _ = False

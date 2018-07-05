@@ -1,18 +1,21 @@
 module Symbols
   ( run
   , Symbol(..)
+  , symbolIdx
+  , DottedSymbol(..)
   , Expression(..)
   , Atom(..)
   , ModSymbolTable(..)
   , ModSymIdx(..)
   , SymbolArray(..)
+  , symbolData
   , SymbolEntry(..)
+  , symbolEntryData , symbolEntrySymbol
   , mapSE , mapSE'
   , TLStmt(..)
   , ModStmt(..)
   , Module(..)
   , Script(..)
-  , symbolData
   ) where
 
 {-
@@ -39,7 +42,10 @@ import VInt
 import Ranged
 
 newtype Symbol = Symbol Int
-  deriving Show
+  deriving (Show, Eq, Ord)
+
+symbolIdx :: Symbol -> Int
+symbolIdx (Symbol n) = n
 
 data DottedSymbol = DottedSymbol Symbol Symbol
   deriving Show
@@ -95,6 +101,9 @@ data SymbolEntry a = SymbolEntry P.Symbol a
 
 symbolEntryData :: SymbolEntry a -> a
 symbolEntryData (SymbolEntry sym a) = a
+
+symbolEntrySymbol :: SymbolEntry a -> P.Symbol
+symbolEntrySymbol (SymbolEntry sym a) = sym
 
 mapSE :: Functor f => (a -> f b) -> SymbolEntry a -> f (SymbolEntry b)
 mapSE f (SymbolEntry sym a) = SymbolEntry sym <$> f a

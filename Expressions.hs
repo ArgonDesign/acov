@@ -2,6 +2,9 @@ module Expressions
   ( run
   , Expression(..)
   , ModSymbolTable(..)
+  , ModStmt(..)
+  , Module(..)
+  , Script(..)
   , Slice(..)
   , sliceWidth
   ) where
@@ -27,7 +30,7 @@ data Expression = ExprSym S.Symbol
                 | ExprSel (Ranged S.Symbol) (Ranged Expression)
                   (Maybe (Ranged Expression))
                 | ExprConcat (Ranged Expression) [Ranged Expression]
-                | ExprReplicate Integer (Ranged Expression)
+                | ExprReplicate Int (Ranged Expression)
                 | ExprUnOp (Ranged UnOp) (Ranged Expression)
                 | ExprBinOp (Ranged BinOp)
                   (Ranged Expression) (Ranged Expression)
@@ -84,14 +87,20 @@ tightenConcat rng [] = bad1 $ Ranged rng "Empty concatenation."
 tightenConcat rng (e : es) =
   liftA2 ExprConcat (tighten e) (mapEO tighten es)
 
-tightenRepCount :: Ranged S.Expression -> ErrorsOr Integer
+tightenRepCount :: Ranged S.Expression -> ErrorsOr Int
 tightenRepCount rse =
   case rangedData rse of
     S.ExprAtom (S.AtomInt int) ->
       case checkVInt int $ baseVISchema { viAllowWidth = False
                                         , viAllowSign = False
                                         , viMinValue = Just 0 } of
-        Nothing -> good $ toInteger int
+        Nothing ->
+          let i = toInteger int in
+            if i < toInteger (minBound :: Int) ||
+               i > toInteger (maxBound :: Int) then
+              noGood "is out of bounds for an integer."
+            else
+              good $ fromInteger i
         Just req -> noGood req
     otherwise -> noGood "should be a literal integer."
   where noGood req = bad1 $ copyRange rse ("Replication count " ++ req)

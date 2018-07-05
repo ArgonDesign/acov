@@ -25,6 +25,7 @@ executable acov
                      , When
                      , Symbols
                      , Expressions
+                     , Width
   -- other-extensions:
   build-depends:       base >=4.6.0.1 && <4.11
                      , array >= 0.4

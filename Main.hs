@@ -9,6 +9,7 @@ import Parser (parseScript)
 import qualified When
 import qualified Symbols
 import qualified Expressions
+import qualified Width
 
 data Args = Args
   { input :: FilePath
@@ -33,7 +34,8 @@ run args = readFile path >>=
            runPass path (parseScript path) >>=
            runPass path When.run >>=
            runPass path Symbols.run >>=
-           runPass path Expressions.run >>
+           runPass path Expressions.run >>=
+           runPass path Width.run >>
            exitSuccess
   where path = input args
 
