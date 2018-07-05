@@ -5,6 +5,7 @@ module Verilog
 import Control.Exception.Base
 import Data.Array
 import Data.Bits
+import Data.Functor
 import Data.Maybe
 import System.Directory
 import System.FilePath
