@@ -194,7 +194,7 @@ checkWidths opname rng n m =
   if n /= m then
     bad1 $ Ranged rng $
     "Left and right side of " ++ opname ++
-    "operator have different widths: " ++
+    " operator have different widths: " ++
     show n ++ " != " ++ show m ++ "."
   else
     good n
