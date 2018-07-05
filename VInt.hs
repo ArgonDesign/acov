@@ -9,6 +9,7 @@ module VInt
 
 import Control.Exception.Base
 import Data.Bits
+import Data.Functor ((<$>))
 import Data.Maybe
 
 import Operators
