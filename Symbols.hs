@@ -8,7 +8,7 @@ module Symbols
   , ModSymbolTable(..)
   , ModSymIdx(..)
   , SymbolArray(..)
-  , symbolData
+  , symbolArrayElems , symbolData , symbolName
   , SymbolEntry(..)
   , symbolEntryData , symbolEntrySymbol
   , mapSE , mapSE'
@@ -114,6 +114,12 @@ mapSE' f (SymbolEntry sym a) = SymbolEntry sym <$> f sym a
 
 newtype SymbolArray a = SymbolArray (Array Int (SymbolEntry a))
   deriving Show
+
+symbolArrayElems :: SymbolArray a -> [SymbolEntry a]
+symbolArrayElems (SymbolArray a) = elems a
+
+symbolName :: SymbolArray a -> Symbol -> String
+symbolName (SymbolArray a) (Symbol i) = P.symName $ symbolEntrySymbol $ a ! i
 
 symbolData :: SymbolArray a -> Symbol -> a
 symbolData (SymbolArray a) (Symbol i) = symbolEntryData (a ! i)

@@ -5,6 +5,7 @@ module VInt
   , VISchema(..) , baseVISchema
   , checkVInt
   , applyUnOp , applyBinOp , applyCond
+  , printVInt
   ) where
 
 import Control.Exception.Base
@@ -253,3 +254,9 @@ applyCond (VInt (Just x) sgn a) b c =
     assert (not sgn)
     assert (a == 0 || a == 1)
     Right $ makeCombinedVInt b c (vIntValue (if a == 0 then c else b))
+
+printVInt :: VInt -> String
+printVInt (VInt mw sgn n) =
+  (case mw of Just w -> show w
+              Nothing -> "") ++
+  (if sgn then "'sd" else "'d") ++ show n

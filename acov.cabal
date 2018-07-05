@@ -26,10 +26,13 @@ executable acov
                      , Symbols
                      , Expressions
                      , Width
+                     , Verilog
   -- other-extensions:
   build-depends:       base >=4.6.0.1 && <4.11
                      , array >= 0.4
                      , containers >= 0.5
+                     , directory >= 1.2
+                     , filepath >= 1.3
                      , optparse-applicative >= 0.7
                      , parsec >= 3.1.0
                      , transformers >= 0.3.0

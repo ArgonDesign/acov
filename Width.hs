@@ -1,5 +1,8 @@
 module Width
   ( run
+  , Script(..)
+  , Module(..)
+  , ModSymbolTable(..)
   ) where
 
 import Control.Applicative
