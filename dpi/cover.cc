@@ -9,6 +9,8 @@
 #include <map>
 #include <set>
 #include <string>
+#include <stdexcept>
+
 #include <stdint.h>
 
 #include <svdpi.h>
@@ -94,7 +96,7 @@ static void close () throw ()
         try {
             recorder->flush ();
         }
-        catch (const std::runtime_error &err) {
+        catch (const std::exception &err) {
             std::cerr << "Error when flushing coverage recorder: " << err.what () << "\n";
         }
         delete recorder;
