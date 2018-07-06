@@ -47,13 +47,38 @@ defaultPorts =
   [S.SymbolEntry (P.Symbol "clk") (Ranged fakeRange $ E.Slice 0 0),
    S.SymbolEntry (P.Symbol "rst_n") (Ranged fakeRange $ E.Slice 0 0)]
 
+fileHeader :: String
+fileHeader =
+  unlines [ "// AUTO-GENERATED FILE: Do not edit."
+          , ""
+          , "`default_nettype none"
+          , ""
+          ]
+
+fileFooter :: String
+fileFooter = "`default_nettype wire\n"
+
+imports :: String
+imports =
+  unlines [ "  import \"DPI-C\" function void acov_record (input string name,"
+          , "                                            input longint value);"
+          , "  import \"DPI-C\" function void acov_close ();"
+          , ""
+          , "`ifndef NO_FINAL"
+          , "  final acov_close ();"
+          , "`endif"
+          , ""
+          ]
+
 beginModule :: Handle -> P.Symbol -> S.SymbolArray (Ranged E.Slice) -> IO ()
 beginModule handle sym portArray =
   assert (not $ null portStrs) $
+  print fileHeader >>
   print start >>
   print (head portStrs) >>
   mapM_ (\ str -> print indent >> print str) (tail portStrs) >>
-  print ");\n\n  coverage_recorder rec_i ();\n\n"
+  print ");\n\n" >>
+  print imports
   where print = hPutStr handle
         start = "module " ++ P.symName sym ++ "_coverage ("
         indent = ",\n" ++ replicate (length start) ' '
@@ -145,12 +170,6 @@ writeGuard handle triggers (Just sym) =
   hPutStr handle (S.symbolName triggers sym) >>
   hPutStr handle ") "
 
-nextWidth :: Int -> Int
-nextWidth n =
-  assert (n > 0) $ shift 1 bitsSet
-  where lz = countLeadingZeros (n - 1)
-        bitsSet = finiteBitSize (0 :: Int) - lz
-
 writeRecord ::
   Handle ->
   S.SymbolArray (Ranged E.Slice) -> S.SymbolArray () -> S.SymbolArray Int ->
@@ -159,10 +178,8 @@ writeRecord ::
 writeRecord handle ports triggers records guard expr recname =
   put "      " >>
   writeGuard handle triggers guard >>
-  put "rec_i.record" >>
-  put (show $ nextWidth width) >>
-  put (" (" ++ show width) >>
-  put ", \"" >>
+  put "acov_record" >>
+  put " (\"" >>
   put (S.symbolName records recname) >>
   put "\", " >>
   put (showExpression ports 0 expr) >>
@@ -179,7 +196,8 @@ writeRecords handle ports triggers records =
   mapM_ (\ (g, e, n) -> writeRecord handle ports triggers records g e n)
 
 endBlocks :: Handle -> IO ()
-endBlocks handle = hPutStr handle "    end\n  end\nendmodule\n"
+endBlocks handle = put "    end\n  end\nendmodule\n\n" >> put fileFooter
+  where put = hPutStr handle
 
 writeModule :: Handle -> P.Symbol -> W.Module -> IO ()
 writeModule handle name (W.Module mst stmts) =

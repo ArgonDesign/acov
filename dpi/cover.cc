@@ -16,8 +16,7 @@
 namespace {
     struct recorder_t
     {
-        void record (int         nbits,
-                     const char *scope,
+        void record (const char *scope,
                      const char *name,
                      uint64_t    value);
         void flush () const;
@@ -34,8 +33,7 @@ namespace {
     };
 }
 
-void recorder_t::record (int         nbits,
-                         const char *scope,
+void recorder_t::record (const char *scope,
                          const char *name,
                          uint64_t    value)
 {
@@ -104,9 +102,9 @@ static void close () throw ()
 }
 
 extern "C" {
-    void acov_record (int nbits, const char *name, long long value) {
+    void acov_record (const char *name, long long value) {
         const char *scope = svGetNameFromScope (svGetScope ());
-        get_recorder ()->record (nbits, scope, name, (uint64_t) value);
+        get_recorder ()->record (scope, name, (uint64_t) value);
     }
 
     void acov_close () {
