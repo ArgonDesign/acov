@@ -170,9 +170,10 @@ baseVInt w = do { char '\''
   where binDigit = ((char '0' <|> char '1') <?> "binary digit")
 
 integer :: Parser VInt
-integer = (baseVInt Nothing) <|>
-          do { d <- uint 10 digit ;
-               option (basicVInt d) (baseVInt (Just d)) }
+integer = T.lexeme lexer
+          ((baseVInt Nothing) <|>
+            do { d <- uint 10 digit ;
+                 option (basicVInt d) (baseVInt (Just d)) })
 
 {-
   A "slice" is of the form [A:B] where we require both A and B to be
