@@ -60,8 +60,8 @@ fileFooter = "`default_nettype wire\n"
 
 imports :: String
 imports =
-  unlines [ "  import \"DPI-C\" function void acov_record (input string name,"
-          , "                                            input longint value);"
+  unlines [ "  import \"DPI-C\" context acov_record ="
+          , "    function void acov_record (input string name, input longint value);"
           , "  import \"DPI-C\" function void acov_close ();"
           , ""
           , "`ifndef NO_FINAL"
