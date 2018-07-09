@@ -50,19 +50,22 @@ $(BUILD)/cabal-config-flags: acov.cabal
 # Dependencies for "cabal build". Firstly, we depend on acov.cabal. We
 # also depend on src/X.hs whenever $(BUILD)/build/acov/acov-tmp/X.hi
 # exists. This seems to ensure all the rebuilds we need.
-HI_FILES := $(wildcard $(BUILD)/build/acov/acov-tmp/*.hi)
-HI_RELPATHS := $(HI_FILES:$(BUILD)/build/acov/acov-tmp/%=%)
-HS_FILES := $(addprefix src/,$(HI_RELPATHS:%.hi=%.hs))
+hi-files-for = $(wildcard $(BUILD)/build/$(1)/$(1)-tmp/*.hi)
+hi-relpaths-for = \
+  $(patsubst $(BUILD)/build/$(1)/$(1)-tmp/%,%,$(call hi-files-for,$(1)))
+hs-files-for = $(patsubst %.hi,src/$(1)/%.hs,$(call hi-relpaths-for,$(1)))
 
 HS_BUILD_DEPS := acov.cabal Setup.hs $(HS_FILES) $(BUILD)/cabal-config-flags
-HS_BINARY     := $(BUILD)/build/acov/acov
+HS_TLS        := acov acov-combine
+HS_FILES      := $(foreach tl,$(HS_TLS),$(call hs-files-for,$(tl)))
+HS_BINARIES   := $(foreach b,$(HS_TLS),$(BUILD)/build/$(b)/$(b))
 
-# To actually build the Haskell application, we run cabal build. We
-# cheat to get the list of dependencies
+# To actually build the Haskell code, we run cabal build and then
+# touch a stamp file.
 .PHONY: cabal-build
-cabal-build: $(HS_BINARY)
+cabal-build: $(HS_BINARIES)
 
-$(HS_BINARY): $(HS_BUILD_DEPS)
+$(BUILD)/build/.stamp: $(HS_BUILD_DEPS)
 	cabal build $(CABAL_BUILD_DIR)
 	touch $@
 
@@ -77,7 +80,7 @@ INSTALLED_BINARY := $(DESTDIR)$(PREFIX)/bin/acov
 .PHONY: cabal-copy
 cabal-copy: $(INSTALLED_BINARY)
 
-$(INSTALLED_BINARY): $(HS_BINARY)
+$(INSTALLED_BINARY): $(BUILD)/build/.stamp
 	cabal copy $(CABAL_INSTALL_FLAGS)
 
 ###############################################################################
@@ -149,7 +152,7 @@ install-dpi: $(LIBDPI32) $(LIBDPI64)
 # SECTION 7: Phony targets to build and install everything
 ###############################################################################
 
-build: $(LIBDPI64) $(LIBDPI32) $(HS_BINARY)
+build: $(LIBDPI64) $(LIBDPI32) $(BUILD)/build/.stamp
 
 install: install-dpi cabal-copy
 
