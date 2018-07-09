@@ -180,13 +180,15 @@ writeGuard handle triggers (Just sym) =
 writeRecord ::
   Handle ->
   S.SymbolArray (Ranged E.Slice) -> S.SymbolArray () -> S.SymbolArray Int ->
-  Maybe S.Symbol -> Ranged E.Expression -> S.Symbol ->
+  P.Symbol -> Maybe S.Symbol -> Ranged E.Expression -> S.Symbol ->
   IO ()
-writeRecord handle ports triggers records guard expr recname =
+writeRecord handle ports triggers records modname guard expr recname =
   put "      " >>
   writeGuard handle triggers guard >>
   put "acov_record" >>
   put " (\"" >>
+  put (P.symName modname) >>
+  put "." >>
   put (S.symbolName records recname) >>
   put "\", " >>
   put (showExpression64 width ports expr) >>
@@ -197,10 +199,10 @@ writeRecord handle ports triggers records guard expr recname =
 writeRecords ::
   Handle ->
   S.SymbolArray (Ranged E.Slice) -> S.SymbolArray () -> S.SymbolArray Int ->
-  [(Maybe S.Symbol, Ranged E.Expression, S.Symbol)] ->
+  P.Symbol -> [(Maybe S.Symbol, Ranged E.Expression, S.Symbol)] ->
   IO ()
-writeRecords handle ports triggers records =
-  mapM_ (\ (g, e, n) -> writeRecord handle ports triggers records g e n)
+writeRecords handle ports triggers records mname =
+  mapM_ (\ (g, e, n) -> writeRecord handle ports triggers records mname g e n)
 
 endBlocks :: Handle -> IO ()
 endBlocks handle = put "    end\n  end\nendmodule\n\n" >> put fileFooter
@@ -211,7 +213,7 @@ writeModule handle name (W.Module mst stmts) =
   beginModule handle name pts >>
   writeTriggers handle pts tgs (triggers stmts) >>
   startAlways handle >>
-  writeRecords handle pts tgs rcs (records stmts) >>
+  writeRecords handle pts tgs rcs name (records stmts) >>
   endBlocks handle
   where pts = W.mstPorts mst
         tgs = W.mstTriggers mst
