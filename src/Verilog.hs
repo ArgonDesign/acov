@@ -128,6 +128,13 @@ showExpression' syms (E.ExprCond ra rb rc) =
   (1, se ra ++ " ? " ++ se rb ++ " : " ++ se rc)
   where se = showExpression syms 1
 
+showExpression64 :: Int -> S.SymbolArray (Ranged E.Slice) ->
+                    Ranged E.Expression -> String
+showExpression64 w syms rexpr =
+  if w /= 64 then "{" ++ show (64 - w) ++ "'b0, " ++ rest ++ "}"
+  else rest
+  where rest = showExpression syms 0 rexpr
+
 triggers :: [E.ModStmt] -> [(S.Symbol, Ranged E.Expression)]
 triggers = mapMaybe unpackTrigger
   where unpackTrigger (E.Assign a b) = Just (rangedData a, b)
@@ -182,7 +189,7 @@ writeRecord handle ports triggers records guard expr recname =
   put " (\"" >>
   put (S.symbolName records recname) >>
   put "\", " >>
-  put (showExpression ports 0 expr) >>
+  put (showExpression64 width ports expr) >>
   put ");\n"
   where put = hPutStr handle
         width = S.symbolData records recname
