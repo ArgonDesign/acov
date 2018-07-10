@@ -35,10 +35,22 @@ library
   default-language:    Haskell2010
   ghc-options:         -fwarn-incomplete-patterns
 
+Test-Suite test-acov
+  type:                exitcode-stdio-1.0
+  main-is:             Main.hs
+  build-depends:       base >=4.6.0.1 && <4.11
+                     , test-framework >= 0.8.0.3
+                     , test-framework-hunit >= 0.3
+                     , HUnit >= 1.2.5
+                     , parsec >= 3.1.0
+                     , acov
+  hs-source-dirs:      src/test-acov
+  default-language:    Haskell2010
+  ghc-options:         -fwarn-incomplete-patterns
+
 executable acov
   main-is:             Main.hs
   other-modules:       Verilog
-  -- other-extensions:
   build-depends:       base >=4.6.0.1 && <4.11
                      , array >= 0.4
                      , containers >= 0.5
@@ -46,7 +58,6 @@ executable acov
                      , filepath >= 1.3
                      , optparse-applicative >= 0.7
                      , acov
-
   hs-source-dirs:      src/acov
   default-language:    Haskell2010
   ghc-options:         -fwarn-incomplete-patterns

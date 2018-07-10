@@ -10,6 +10,10 @@ module Parser
   , Slice(..)
   , Atom(..)
   , parseScript
+
+  -- Exported just for testing
+  , sym
+
   ) where
 
 import Control.Applicative ((<*))
