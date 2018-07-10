@@ -1,13 +1,19 @@
 module Coverage
-  ( Coverage
+  ( -- Used by acov-combine
+    Coverage
   , emptyCoverage
   , readCoverage
   , dumpCoverage
+
+  -- Used by acov-report
+  , PerModCoverage
+  , swizzleCoverage
+  , pmcLookup
   ) where
 
 import Control.Applicative ((<*))
 import qualified Control.Exception as CE
-import Data.IntSet (IntSet , fromList , toList)
+import qualified Data.IntSet as IS
 import Data.Functor ((<$>))
 import Data.List
 import qualified Data.Map.Strict as Map
@@ -23,7 +29,7 @@ import qualified Text.Parsec.Token as T
 {-
   The type for coverage data is just a deeply nested set of maps.
 -}
-type VarCoverage = Map.Map String IntSet
+type VarCoverage = Map.Map String IS.IntSet
 type ScopeCoverage = Map.Map String VarCoverage
 
 data Coverage = Coverage (Map.Map String ScopeCoverage)
@@ -55,7 +61,7 @@ emptyCoverage = Coverage Map.empty
 type CState = Maybe String
 type CParser = Parsec String CState
 
-data Record = Record String (String, String) IntSet
+data Record = Record String (String, String) IS.IntSet
 
 language :: L.LanguageDef CState
 language = L.emptyDef { T.commentLine = "#" }
@@ -74,9 +80,8 @@ int = try $
              fail $ "Integer " ++ show n ++ " is out of range."
          }
 
-vals :: CParser IntSet
-vals = fromList <$>
-       (T.braces lexer $ sepBy int (T.reservedOp lexer ","))
+vals :: CParser IS.IntSet
+vals = IS.fromList <$> (T.braces lexer $ sepBy int (T.reservedOp lexer ","))
 
 sym :: CParser String
 sym = T.identifier lexer
@@ -140,18 +145,18 @@ parseFile path =
   Now we know how to parse a file into a list of records, we can use a
   record to update coverage.
 -}
-newVC :: String -> IntSet -> VarCoverage
+newVC :: String -> IS.IntSet -> VarCoverage
 newVC = Map.singleton
 
-updateVC :: VarCoverage -> String -> IntSet -> VarCoverage
+updateVC :: VarCoverage -> String -> IS.IntSet -> VarCoverage
 updateVC vc var vals = Map.alter (Just . change) var vc
   where change Nothing = vals
         change (Just vals') = vals' <> vals
 
-newSC :: (String, String) -> IntSet -> ScopeCoverage
+newSC :: (String, String) -> IS.IntSet -> ScopeCoverage
 newSC (mod, var) vals = Map.singleton mod $ newVC var vals
 
-updateSC :: ScopeCoverage -> (String, String) -> IntSet -> ScopeCoverage
+updateSC :: ScopeCoverage -> (String, String) -> IS.IntSet -> ScopeCoverage
 updateSC sc (mod, var) vals = Map.alter (Just . change) mod sc
   where change Nothing = newVC var vals
         change (Just vc) = updateVC vc var vals
@@ -171,11 +176,11 @@ readCoverage c fp = parseFile fp >>= return . fmap (foldl' updateCoverage c)
 {-
   Finally, we need to be able to dump the new coverage that we've got
 -}
-dumpIntSet :: IntSet -> IO ()
+dumpIntSet :: IS.IntSet -> IO ()
 dumpIntSet vals = 
-  putStr $ intercalate ", " (map show (toList vals))
+  putStr $ intercalate ", " (map show (IS.toList vals))
 
-dumpVar :: String -> (String, IntSet) -> IO ()
+dumpVar :: String -> (String, IS.IntSet) -> IO ()
 dumpVar modname (var, vals) =
   putStr modname >> putStr "." >> putStr var >> putStr " : {" >>
   dumpIntSet vals >> putStr "}\n"
@@ -189,3 +194,49 @@ dumpScope (name, sc) =
 
 dumpCoverage :: Coverage -> IO ()
 dumpCoverage (Coverage scopes) = mapM_ dumpScope (Map.toList scopes)
+
+{-
+  After reading in the coverage, we can swizzle the map around to get
+  it in the form
+
+    Module -> Scope -> Vars
+
+  A ModCoverage instance is the coverage data for one module. A
+  PerModCoverage instance is a map, keyed by module name, with a
+  ModCoverage instance for each module.
+-}
+newtype ModCoverage = ModCoverage (Map.Map String VarCoverage)
+
+mcNew :: String -> VarCoverage -> ModCoverage
+mcNew scopeName vc = ModCoverage $ Map.singleton scopeName vc
+
+mcSet :: String -> VarCoverage -> ModCoverage -> ModCoverage
+mcSet scopeName vc (ModCoverage mc) = ModCoverage (Map.insert scopeName vc mc)
+
+mcLookup :: ModCoverage -> String -> Map.Map String IS.IntSet
+mcLookup (ModCoverage mc) var = Map.map get mc
+  where get vc = case Map.lookup var vc of
+                   Nothing -> IS.empty
+                   Just vals -> vals
+
+newtype PerModCoverage = PerModCoverage (Map.Map String ModCoverage)
+
+pmcEmpty :: PerModCoverage
+pmcEmpty = PerModCoverage Map.empty
+
+pmcSet :: String -> String -> VarCoverage -> PerModCoverage -> PerModCoverage
+pmcSet modName scopeName vc (PerModCoverage pmc) =
+  PerModCoverage (Map.alter (Just . change) modName pmc)
+  where change Nothing = mcNew scopeName vc
+        change (Just mc) = mcSet scopeName vc mc
+
+pmcLookup :: PerModCoverage -> String -> String -> Map.Map String IS.IntSet
+pmcLookup (PerModCoverage pmc) mod var =
+  case Map.lookup mod pmc of
+    Nothing -> Map.empty
+    Just mc -> mcLookup mc var
+
+swizzleCoverage :: Coverage -> PerModCoverage
+swizzleCoverage (Coverage scopes) = Map.foldrWithKey updPMC pmcEmpty scopes
+  where updPMC scopeName sc pmc = Map.foldrWithKey (updPMC' scopeName) pmc sc
+        updPMC' scopeName modName = pmcSet modName scopeName

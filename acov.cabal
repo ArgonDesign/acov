@@ -75,6 +75,7 @@ executable acov-combine
 
 executable acov-report
   main-is:             Main.hs
+  other-modules:       Report
   build-depends:       base >=4.6.0.1 && <4.11
                      , containers >= 0.5
                      , optparse-applicative >= 0.7
