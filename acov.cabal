@@ -68,8 +68,17 @@ executable acov-combine
   build-depends:       base >=4.6.0.1 && <4.11
                      , containers >= 0.5
                      , optparse-applicative >= 0.7
-                     , parsec >= 3.1.0
                      , acov
   hs-source-dirs:      src/acov-combine
+  default-language:    Haskell2010
+  ghc-options:         -fwarn-incomplete-patterns
+
+executable acov-report
+  main-is:             Main.hs
+  build-depends:       base >=4.6.0.1 && <4.11
+                     , containers >= 0.5
+                     , optparse-applicative >= 0.7
+                     , acov
+  hs-source-dirs:      src/acov-report
   default-language:    Haskell2010
   ghc-options:         -fwarn-incomplete-patterns

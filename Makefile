@@ -59,7 +59,7 @@ hi-files-top = $(wildcard $(BUILD)/build/*.hi)
 hi-relpaths-top = $(patsubst $(BUILD)/build/%,%,$(hi-files-top))
 hs-top = $(patsubst %.hi,src/frontend/%.hs,$(hi-relpaths-top))
 
-HS_TLS        := acov acov-combine
+HS_TLS        := acov acov-combine acov-report
 HS_FILES      := $(foreach t,$(HS_TLS),$(call hs-for,$(t))) $(hs-top)
 HS_BINARIES   := $(foreach b,$(HS_TLS),$(BUILD)/build/$(b)/$(b))
 HS_BUILD_DEPS := acov.cabal Setup.hs $(HS_FILES) $(BUILD)/cabal-config-flags
