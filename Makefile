@@ -53,17 +53,21 @@ $(BUILD)/cabal-config-flags: acov.cabal
 hi-files-for = $(wildcard $(BUILD)/build/$(1)/$(1)-tmp/*.hi)
 hi-relpaths-for = \
   $(patsubst $(BUILD)/build/$(1)/$(1)-tmp/%,%,$(call hi-files-for,$(1)))
-hs-files-for = $(patsubst %.hi,src/$(1)/%.hs,$(call hi-relpaths-for,$(1)))
+hs-for = $(patsubst %.hi,src/$(1)/%.hs,$(call hi-relpaths-for,$(1)))
 
-HS_BUILD_DEPS := acov.cabal Setup.hs $(HS_FILES) $(BUILD)/cabal-config-flags
+hi-files-top = $(wildcard $(BUILD)/build/*.hi)
+hi-relpaths-top = $(patsubst $(BUILD)/build/%,%,$(hi-files-top))
+hs-top = $(patsubst %.hi,src/frontend/%.hs,$(hi-relpaths-top))
+
 HS_TLS        := acov acov-combine
-HS_FILES      := $(foreach tl,$(HS_TLS),$(call hs-files-for,$(tl)))
+HS_FILES      := $(foreach t,$(HS_TLS),$(call hs-for,$(t))) $(hs-top)
 HS_BINARIES   := $(foreach b,$(HS_TLS),$(BUILD)/build/$(b)/$(b))
+HS_BUILD_DEPS := acov.cabal Setup.hs $(HS_FILES) $(BUILD)/cabal-config-flags
 
 # To actually build the Haskell code, we run cabal build and then
 # touch a stamp file.
 .PHONY: cabal-build
-cabal-build: $(HS_BINARIES)
+cabal-build: $(BUILD)/build/.stamp
 
 $(BUILD)/build/.stamp: $(HS_BUILD_DEPS)
 	cabal build $(CABAL_BUILD_DIR)
@@ -152,9 +156,12 @@ install-dpi: $(LIBDPI32) $(LIBDPI64)
 # SECTION 7: Phony targets to build and install everything
 ###############################################################################
 
-build: $(LIBDPI64) $(LIBDPI32) $(BUILD)/build/.stamp
+.PHONY: build
+build: $(LIBDPI64) $(LIBDPI32) cabal-build
 
+.PHONY: install
 install: install-dpi cabal-copy
 
+.PHONY: clean
 clean:
 	rm -rf $(BUILD)
