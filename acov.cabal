@@ -26,6 +26,7 @@ library
                      , Expressions
                      , Width
                      , Frontend
+                     , Coverage
   build-depends:       base >=4.6.0.1 && <4.11
                      , array >= 0.4
                      , containers >= 0.5
@@ -64,11 +65,11 @@ executable acov
 
 executable acov-combine
   main-is:             Main.hs
-  other-modules:       Coverage
   build-depends:       base >=4.6.0.1 && <4.11
                      , containers >= 0.5
                      , optparse-applicative >= 0.7
                      , parsec >= 3.1.0
+                     , acov
   hs-source-dirs:      src/acov-combine
   default-language:    Haskell2010
   ghc-options:         -fwarn-incomplete-patterns
