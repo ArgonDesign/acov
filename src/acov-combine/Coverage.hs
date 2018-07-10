@@ -5,12 +5,14 @@ module Coverage
   , dumpCoverage
   ) where
 
+import Control.Applicative ((<*))
 import qualified Control.Exception as CE
 import Data.IntSet (IntSet , fromList , toList)
+import Data.Functor ((<$>))
 import Data.List
 import qualified Data.Map.Strict as Map
 import Data.Maybe
-import Data.Semigroup ((<>))
+import Data.Monoid ((<>))
 import System.IO
 import Text.Parsec
 import Text.Parsec.Error
