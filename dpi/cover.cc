@@ -100,6 +100,7 @@ static void close () throw ()
             std::cerr << "Error when flushing coverage recorder: " << err.what () << "\n";
         }
         delete recorder;
+        recorder = NULL;
     }
 }
 
