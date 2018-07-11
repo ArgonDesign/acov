@@ -192,7 +192,7 @@ checkWidth1 rng n =
   else
     good ()
 
-checkWidths :: String -> LCRange -> Int -> Int -> ErrorsOr Int
+checkWidths :: String -> LCRange -> Int -> Int -> ErrorsOr ()
 checkWidths opname rng n m =
   if n /= m then
     bad1 $ Ranged rng $
@@ -200,7 +200,7 @@ checkWidths opname rng n m =
     " operator have different widths: " ++
     show n ++ " != " ++ show m ++ "."
   else
-    good n
+    good ()
 
 binOpWidth :: E.ModSymbolTable ->
               Ranged BinOp -> Ranged E.Expression -> Ranged E.Expression ->
@@ -208,6 +208,7 @@ binOpWidth :: E.ModSymbolTable ->
 binOpWidth mst bo re0 re1 =
   do { (ew0, ew1) <- liftA2 (,) (exprWidth mst re0) (exprWidth mst re1)
      ; checkWidths (show $ rangedData bo) (rangedRange bo) ew0 ew1
+     ; good $ if binOpIsReduction (rangedData bo) then 1 else ew0
      }
 
 condWidth :: E.ModSymbolTable -> Ranged E.Expression -> Ranged E.Expression ->

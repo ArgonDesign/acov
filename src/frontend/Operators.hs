@@ -4,6 +4,7 @@ module Operators
   , unOpPrecedence
   , showUnOp
   , BinOp(..)
+  , binOpIsReduction
   , binOpPrecedence
   , showBinOp
   ) where
@@ -51,6 +52,17 @@ showUnOp RedXor = "^"
 showUnOp RedXnor = "~^"
 showUnOp UPlus = "+"
 showUnOp UMinus = "-"
+
+binOpIsReduction :: BinOp -> Bool
+binOpIsReduction Greater = True
+binOpIsReduction GreaterEq = True
+binOpIsReduction Less = True
+binOpIsReduction LessEq = True
+binOpIsReduction LogEq = True
+binOpIsReduction LogNeq = True
+binOpIsReduction LogAnd = True
+binOpIsReduction LogOr = True
+binOpIsReduction _ = False
 
 binOpPrecedence :: BinOp -> Int
 binOpPrecedence Times = 12
