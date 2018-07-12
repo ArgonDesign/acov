@@ -3,6 +3,8 @@ module Main where
 import Data.Monoid ((<>))
 import Options.Applicative
 import System.Exit
+import System.Directory
+import System.FilePath
 import System.IO
 import qualified Data.Map.Strict as Map
 
@@ -64,13 +66,24 @@ makeReports :: PerModCoverage -> S.SymbolArray W.Module -> [S.TLStmt] ->
                Reports
 makeReports pmc mods = foldr (procStmt pmc mods) (Reports Map.empty)
 
+dumpReports :: Reports -> Handle -> IO ()
+dumpReports rpts handle =
+  put ("<!DOCTYPE html><html><head>" ++
+       "<meta charset='utf-8' />" ++
+       "<title>Functional coverage report</title></head><body>") >>
+  put "<h1>Single-variable coverage</h1>" >>
+  Map.traverseWithKey dcr (covers rpts) >>
+  put "</body></html>"
+  where put = hPutStr handle
+        dcr (modName, recName) = dumpCoverReport handle modName recName
+
 run :: Args -> IO ()
 run args = do { scr <- Frontend.run (input args)
               ; pmc <- swizzleCoverage <$> getCoverage (cover args)
-              ; let rpts = makeReports pmc (W.scrModules scr) (W.scrStmts scr)
-              ; Map.traverseWithKey
-                (\ (modName, recName) -> dumpCoverReport modName recName)
-                (covers rpts)
+              ; createDirectoryIfMissing False (odir args)
+              ; withFile (odir args </> "index.html") WriteMode
+                (dumpReports
+                 (makeReports pmc (W.scrModules scr) (W.scrStmts scr)))
               ; return ()
               }
 
