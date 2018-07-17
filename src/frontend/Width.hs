@@ -2,7 +2,6 @@ module Width
   ( run
   , Script(..)
   , Module(..)
-  , ModSymbolTable(..)
   ) where
 
 import Control.Applicative
@@ -15,6 +14,7 @@ import Data.Maybe
 import qualified Expressions as E
 import qualified Symbols as S
 import qualified Parser as P
+import SymbolTable
 import ErrorsOr
 import Operators
 import VInt
@@ -24,36 +24,23 @@ import Ranged
   The width pass does width checking (working with a Verilog-like
   semantics but where we don't do magic width promotion based on the
   destination size). The statements unchanged, but we note the width
-  of recorded expressions (note the type of mstRecords change gained
-  an Int)
+  of recorded expressions (this is the Int in the type of modRecs)
 -}
-data ModSymbolTable = ModSymbolTable { mstMap :: Map.Map String S.ModSymIdx
-                                     , mstPorts :: S.SymbolArray (Ranged E.Slice)
-                                     , mstTriggers :: S.SymbolArray ()
-                                     , mstRMap :: Map.Map String S.Symbol
-                                     , mstRecords :: S.SymbolArray Int
-                                     }
-  deriving Show
+data Module = Module { modSyms :: SymbolTable (Ranged E.Slice)
+                     , modBlocks :: [E.Block]
+                     , modRecs :: SymbolTable Int
+                     }
 
-data Module = Module ModSymbolTable [E.ModStmt]
-  deriving Show
-
-data Script = Script { scrMap :: Map.Map String S.Symbol
-                     , scrModules :: S.SymbolArray Module
+data Script = Script { scrModules :: SymbolTable Module
                      , scrStmts :: [S.TLStmt]
                      }
-  deriving Show
 
-symBits :: E.ModSymbolTable -> S.Symbol -> (Int, Int)
-symBits mst sym =
-  case rangedData (S.symbolData (E.mstPorts mst) sym) of
-    E.Slice a b -> (max a b, min a b)
+symBits :: SymbolTable (Ranged E.Slice) -> Symbol -> (Int, Int)
+symBits st sym =
+  let E.Slice a b = rangedData (stAt sym st) in (max a b, min a b)
 
-symWidth :: E.ModSymbolTable -> S.Symbol -> Int
-symWidth mst sym =
-  E.sliceWidth $
-  rangedData $
-  S.symbolData (E.mstPorts mst) sym
+symWidth :: SymbolTable (Ranged E.Slice) -> Symbol -> Int
+symWidth st sym = E.sliceWidth $ rangedData $ stAt sym st
 
 intWidth :: LCRange -> VInt -> ErrorsOr Int
 intWidth rng n =
@@ -133,9 +120,9 @@ selBits re0 mre1 =
   where get = exprAsVInt . rangedData
 
 
-checkSel :: E.ModSymbolTable -> Ranged S.Symbol ->
+checkSel :: SymbolTable (Ranged E.Slice) -> Ranged Symbol -> 
             Maybe (Integer, Integer) -> ErrorsOr ()
-checkSel mst rsym used =
+checkSel st rsym used =
   case used of
     -- If we can't figure out the bits in advance, we can't help.
     Nothing -> good ()
@@ -143,7 +130,7 @@ checkSel mst rsym used =
     -- underlying symbol
     Just (a, b) ->
       let (uhi, ulo) = (max a b, min a b)
-          (shi, slo) = symBits mst (rangedData rsym) in
+          (shi, slo) = symBits st (rangedData rsym) in
         if ulo < toInteger slo || uhi > toInteger shi then
           bad1 $ copyRange rsym $
           "Bit selection overflows size of symbol."
@@ -152,34 +139,34 @@ checkSel mst rsym used =
 
 -- TODO: We should support +: and -: so that I can write x[y +: 2] and
 -- have a sensible width.
-selWidth :: E.ModSymbolTable -> Ranged S.Symbol ->
+selWidth :: SymbolTable (Ranged E.Slice) -> Ranged Symbol -> 
             Ranged E.Expression -> Maybe (Ranged E.Expression) ->
             ErrorsOr Int
-selWidth mst rsym re0 mre1 =
+selWidth st rsym re0 mre1 =
   do { used <- selBits re0 mre1
-     ; checkSel mst rsym used
+     ; checkSel st rsym used
      ; case used of
          Nothing -> bad1 $ copyRange rsym
                     "Can't compute width of bit selection."
          Just (a, b) -> good $ fromInteger $ max a b - min a b + 1
      }
 
-concatWidth :: E.ModSymbolTable -> Ranged E.Expression ->
+concatWidth :: SymbolTable (Ranged E.Slice) -> Ranged E.Expression ->
                [Ranged E.Expression] -> ErrorsOr Int
-concatWidth mst re res =
+concatWidth st re res =
   do { (w0, ws) <- liftA2 (,) (get re) (mapEO get res)
      ; good $ w0 + sum ws
      }
-  where get = exprWidth mst
+  where get = exprWidth st
 
-repWidth :: E.ModSymbolTable -> Int ->
+repWidth :: SymbolTable (Ranged E.Slice) -> Int ->
             Ranged E.Expression -> ErrorsOr Int
-repWidth mst n re = ((*) n) <$> (exprWidth mst re)
+repWidth st n re = ((*) n) <$> (exprWidth st re)
 
-unOpWidth :: E.ModSymbolTable ->
+unOpWidth :: SymbolTable (Ranged E.Slice) ->
              Ranged UnOp -> Ranged E.Expression -> ErrorsOr Int
-unOpWidth mst uo re =
-  do { ew <- exprWidth mst re
+unOpWidth st uo re =
+  do { ew <- exprWidth st re
      ; return $ if unOpIsReduction (rangedData uo) then 1 else ew
      }
 
@@ -202,94 +189,76 @@ checkWidths opname rng n m =
   else
     good ()
 
-binOpWidth :: E.ModSymbolTable ->
+binOpWidth :: SymbolTable (Ranged E.Slice) ->
               Ranged BinOp -> Ranged E.Expression -> Ranged E.Expression ->
               ErrorsOr Int
-binOpWidth mst bo re0 re1 =
-  do { (ew0, ew1) <- liftA2 (,) (exprWidth mst re0) (exprWidth mst re1)
+binOpWidth st bo re0 re1 =
+  do { (ew0, ew1) <- liftA2 (,) (exprWidth st re0) (exprWidth st re1)
      ; checkWidths (show $ rangedData bo) (rangedRange bo) ew0 ew1
      ; good $ if binOpIsReduction (rangedData bo) then 1 else ew0
      }
 
-condWidth :: E.ModSymbolTable -> Ranged E.Expression -> Ranged E.Expression ->
+condWidth :: SymbolTable (Ranged E.Slice) -> Ranged E.Expression -> Ranged E.Expression ->
              Ranged E.Expression -> ErrorsOr Int
-condWidth mst e0 e1 e2 =
+condWidth st e0 e1 e2 =
   do { (ew0, ew1, ew2) <- liftA3 (,,) (get e0) (get e1) (get e2)
      ; liftA2 (,) (checkWidth1 (rangedRange e0) ew0)
                   (checkWidths "conditional" (rangedRange e1) ew1 ew2)
      ; return ew1
      }
-  where get = exprWidth mst
+  where get = exprWidth st
 
-exprWidth :: E.ModSymbolTable -> Ranged E.Expression -> ErrorsOr Int
-exprWidth mst rexpr = exprWidth' mst (rangedRange rexpr) (rangedData rexpr)
+exprWidth :: SymbolTable (Ranged E.Slice) -> Ranged E.Expression -> ErrorsOr Int
+exprWidth st rexpr = exprWidth' st (rangedRange rexpr) (rangedData rexpr)
 
-exprWidth' :: E.ModSymbolTable -> LCRange -> E.Expression -> ErrorsOr Int
-exprWidth' mst _ (E.ExprSym sym) = return $ symWidth mst sym
+exprWidth' :: SymbolTable (Ranged E.Slice) -> LCRange -> E.Expression -> ErrorsOr Int
+exprWidth' st _ (E.ExprSym sym) = return $ symWidth st sym
 exprWidth' _ rng (E.ExprInt vint) = intWidth rng vint
-exprWidth' mst _ (E.ExprSel sym ex0 ex1) = selWidth mst sym ex0 ex1
-exprWidth' mst _ (E.ExprConcat e0 es) = concatWidth mst e0 es
-exprWidth' mst _ (E.ExprReplicate n e) = repWidth mst n e
-exprWidth' mst _ (E.ExprUnOp uo e) = unOpWidth mst uo e
-exprWidth' mst _ (E.ExprBinOp bo e0 e1) = binOpWidth mst bo e0 e1
-exprWidth' mst _ (E.ExprCond e0 e1 e2) = condWidth mst e0 e1 e2
+exprWidth' st _ (E.ExprSel sym ex0 ex1) = selWidth st sym ex0 ex1
+exprWidth' st _ (E.ExprConcat e0 es) = concatWidth st e0 es
+exprWidth' st _ (E.ExprReplicate n e) = repWidth st n e
+exprWidth' st _ (E.ExprUnOp uo e) = unOpWidth st uo e
+exprWidth' st _ (E.ExprBinOp bo e0 e1) = binOpWidth st bo e0 e1
+exprWidth' st _ (E.ExprCond e0 e1 e2) = condWidth st e0 e1 e2
 
-takeAssign :: E.ModSymbolTable -> Ranged S.Symbol -> Ranged E.Expression ->
-              ErrorsOr ()
-takeAssign mst sym expr =
-  do { w <- exprWidth mst expr
-     ; if w /= 1 then
-         bad1 $ copyRange sym $
-         "Assignment to trigger `" ++ show (rangedData sym) ++
-         "' has width " ++ show w ++ " != 1."
-       else
-         good ()
+takeRecord :: SymbolTable (Ranged E.Slice) -> Map.Map Symbol Int ->
+              E.Record -> ErrorsOr (Map.Map Symbol Int)
+takeRecord st m (E.Record expr sym) =
+  do { w <- exprWidth st expr
+     ; assert (not $ Map.member sym m) $
+       good $ Map.insert sym w m
      }
 
-takeRecord :: E.ModSymbolTable -> Map.Map Int Int -> Maybe (Ranged S.Symbol) ->
-              Ranged E.Expression -> Ranged S.Symbol ->
-              ErrorsOr (Map.Map Int Int)
-takeRecord mst m guard expr name =
-  do { w <- exprWidth mst expr
-     ; assert (not $ Map.member idx m) $
-       good $ Map.insert idx w m
+takeBlock :: SymbolTable (Ranged E.Slice) -> Map.Map Symbol Int ->
+             E.Block -> ErrorsOr (Map.Map Symbol Int)
+takeBlock st m (E.Block guard recs) =
+  do { (_, m') <- liftA2 (,) (checkGuard guard) (foldEO (takeRecord st) m recs)
+     ; good m'
      }
-  where idx = S.symbolIdx $ rangedData name
+  where checkGuard Nothing = good ()
+        checkGuard (Just g) =
+          do { gw <- exprWidth st g
+             ; if gw /= 1 then
+                 bad1 $ copyRange g $
+                 ("Block is guarded by expression with width " ++
+                   show gw ++ ", not 1.")
+               else
+                 good ()
+             }
 
-takeModStmt :: E.ModSymbolTable -> Map.Map Int Int -> E.ModStmt ->
-               ErrorsOr (Map.Map Int Int)
-takeModStmt mst m (E.Assign lhs rhs) = takeAssign mst lhs rhs >> good m
-takeModStmt mst m (E.Record guard expr name) = takeRecord mst m guard expr name
-
-takeModStmts :: E.ModSymbolTable -> [E.ModStmt] ->
-                ErrorsOr (Map.Map Int Int)
-takeModStmts mst = foldEO (takeModStmt mst) Map.empty
-
-buildMSTRecords :: S.SymbolArray () -> Map.Map Int Int -> S.SymbolArray Int
-buildMSTRecords (S.SymbolArray recs) widths =
-  S.SymbolArray $
-  listArray (bounds recs) [ upd i (recs ! i) | i <- indices recs ]
-  where upd i (S.SymbolEntry sym ()) =
-          S.SymbolEntry sym (fromJust (Map.lookup i widths))
-
-buildMST :: E.ModSymbolTable -> Map.Map Int Int ->
-            ModSymbolTable
-buildMST mst m = ModSymbolTable
-                 (E.mstMap mst)
-                 (E.mstPorts mst)
-                 (E.mstTriggers mst)
-                 (E.mstRMap mst) $
-                 buildMSTRecords (E.mstRecords mst) m
-
-takeModule :: E.Module -> ErrorsOr Module
-takeModule (E.Module mst stmts) =
-  do { widths <- takeModStmts mst stmts
-     ; return $ Module (buildMST mst widths) stmts
+readModule :: E.Module -> ErrorsOr Module
+readModule mod =
+  Module (E.modSyms mod) blocks <$>
+  do { widths <- foldEO (takeBlock (E.modSyms mod)) Map.empty blocks
+     ; return $ stMapWithSymbol (f widths) (E.modRecs mod)
      }
+  where blocks = E.modBlocks mod
+        f widths sym () =
+          assert (Map.member sym widths) $
+          fromJust (Map.lookup sym widths)
 
-takeModules :: S.SymbolArray E.Module -> ErrorsOr (S.SymbolArray Module)
-takeModules (S.SymbolArray mods) =
-  S.SymbolArray <$> amapEO (S.mapSE takeModule) mods
+readModules :: SymbolTable E.Module -> ErrorsOr (SymbolTable Module)
+readModules = traverseEO readModule
 
 fitsInBits :: Integer -> Int -> Bool
 fitsInBits n w = assert (w > 0) $ shift (abs n) (- sw) == 0
@@ -313,31 +282,23 @@ checkCover' rng w Nothing =
 checkCover' _ w (Just (P.CoverList vints)) =
   mapEO (checkCover1 w) vints >> good ()
 
-recWidth :: ModSymbolTable -> S.Symbol -> Int
-recWidth mst sym = S.symbolData (mstRecords mst) sym
-
-checkCover :: Map.Map String S.Symbol ->
-              S.SymbolArray Module ->
+checkCover :: SymbolTable Module ->
               Ranged S.DottedSymbol -> Maybe P.CoverList ->
               ErrorsOr ()
-checkCover modMap mods dsym clist =
-  checkCover' (rangedRange dsym) (recWidth mst vsym) clist
+checkCover mods dsym clist = checkCover' (rangedRange dsym) width clist
   where S.DottedSymbol msym vsym = rangedData dsym
-        Module mst _ = S.symbolData mods msym
+        width = stAt vsym (modRecs (stAt msym mods))
 
-checkTLStmt :: Map.Map String S.Symbol -> S.SymbolArray Module ->
-               S.TLStmt -> ErrorsOr ()
-checkTLStmt modMap mods (S.Cover dsym cov) = checkCover modMap mods dsym cov
-checkTLStmt _ _ (S.Cross _) = good ()
+checkTLStmt :: SymbolTable Module -> S.TLStmt -> ErrorsOr ()
+checkTLStmt mods (S.Cover dsym cov) = checkCover mods dsym cov
+checkTLStmt _ (S.Cross _) = good ()
 
-checkTLStmts :: Map.Map String S.Symbol -> S.SymbolArray Module ->
-                [S.TLStmt] -> ErrorsOr ()
-checkTLStmts modMap mods = foldEO (\ _ -> checkTLStmt modMap mods) ()
+checkTLStmts :: SymbolTable Module -> [S.TLStmt] -> ErrorsOr ()
+checkTLStmts mods = foldEO (\ _ -> checkTLStmt mods) ()
 
 run :: E.Script -> ErrorsOr Script
-run script = do { mods <- takeModules (E.scrModules script)
-                ; checkTLStmts smap mods stmts
-                ; good $ Script smap mods stmts
+run script = do { mods <- readModules (E.scrMods script)
+                ; checkTLStmts mods stmts
+                ; good $ Script mods stmts
                 }
-  where smap = E.scrMap script
-        stmts = E.scrStmts script
+  where stmts = E.scrStmts script

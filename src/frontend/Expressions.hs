@@ -1,8 +1,8 @@
 module Expressions
   ( run
   , Expression(..)
-  , ModSymbolTable(..)
-  , ModStmt(..)
+  , Record(..)
+  , Block(..)
   , Module(..)
   , Script(..)
   , Slice(..)
@@ -19,15 +19,16 @@ import ErrorsOr
 import Operators
 import VInt
 import Ranged
+import SymbolTable
 
 {-
   The expressions pass tightens up our representation of expressions,
   making sure that stuff that looks like it should be an integer
   really is, that bit selects only apply to symbols and so on.
 -}
-data Expression = ExprSym S.Symbol
+data Expression = ExprSym Symbol
                 | ExprInt VInt
-                | ExprSel (Ranged S.Symbol) (Ranged Expression)
+                | ExprSel (Ranged Symbol) (Ranged Expression)
                   (Maybe (Ranged Expression))
                 | ExprConcat (Ranged Expression) [Ranged Expression]
                 | ExprReplicate Int (Ranged Expression)
@@ -36,41 +37,30 @@ data Expression = ExprSym S.Symbol
                   (Ranged Expression) (Ranged Expression)
                 | ExprCond (Ranged Expression)
                   (Ranged Expression) (Ranged Expression)
-  deriving Show
 
-data ModStmt = Assign (Ranged S.Symbol) (Ranged Expression)
-             | Record (Maybe (Ranged S.Symbol))
-               (Ranged Expression) (Ranged S.Symbol)
-  deriving Show
+data Record = Record (Ranged Expression) Symbol
+
+data Block = Block (Maybe (Ranged Expression)) [Record]
+
+data Module = Module { modSyms :: SymbolTable (Ranged Slice)
+                     , modRecs :: SymbolTable ()
+                     , modBlocks :: [Block]
+                     }
 
 data Slice = Slice Int Int
-  deriving Show
 
 sliceWidth :: Slice -> Int
 sliceWidth (Slice a b) = 1 + (if a < b then b - a else a - b)
 
-data ModSymbolTable = ModSymbolTable { mstMap :: Map.Map String S.ModSymIdx
-                                     , mstPorts :: S.SymbolArray (Ranged Slice)
-                                     , mstTriggers :: S.SymbolArray ()
-                                     , mstRMap :: Map.Map String S.Symbol
-                                     , mstRecords :: S.SymbolArray ()
-                                     }
-  deriving Show
-
-data Module = Module ModSymbolTable [ModStmt]
-  deriving Show
-
-data Script = Script { scrMap :: Map.Map String S.Symbol
-                     , scrModules :: S.SymbolArray Module
+data Script = Script { scrMods :: SymbolTable Module
                      , scrStmts :: [S.TLStmt]
                      }
-  deriving Show
 
 tightenAtom :: S.Atom -> Expression
 tightenAtom (S.AtomSym sym) = ExprSym sym
 tightenAtom (S.AtomInt int) = ExprInt int
 
-tightenSel' :: Ranged S.Expression -> ErrorsOr (Ranged S.Symbol)
+tightenSel' :: Ranged S.Expression -> ErrorsOr (Ranged Symbol)
 tightenSel' rse =
   case rangedData rse of
     S.ExprAtom (S.AtomSym sym) -> good $ copyRange rse sym
@@ -135,10 +125,12 @@ tighten' _ (S.ExprCond se0 se1 se2) = tightenCond se0 se1 se2
 tighten :: Ranged S.Expression -> ErrorsOr (Ranged Expression)
 tighten rse = copyRange rse <$> tighten' (rangedRange rse) (rangedData rse)
 
-tightenModStmt :: S.ModStmt -> ErrorsOr ModStmt
-tightenModStmt (S.Assign lhs rhs) = Assign lhs <$> tighten rhs
-tightenModStmt (S.Record guard expr dest) =
-  (\ e -> Record guard e dest) <$> tighten expr
+tightenRecord :: S.Record -> ErrorsOr Record
+tightenRecord (S.Record expr name) = (\ e -> Record e name) <$> tighten expr
+
+tightenBlock :: S.Block -> ErrorsOr Block
+tightenBlock (S.Block guard recs) =
+  liftA2 Block (eoMaybe (tighten <$> guard)) (mapEO tightenRecord recs)
 
 tightenBitSel :: P.Symbol -> LCRange -> VInt -> ErrorsOr Integer
 tightenBitSel psym rng int =
@@ -149,47 +141,38 @@ tightenBitSel psym rng int =
     Just req -> bad1 $ Ranged rng ("Bit selection for port `" ++
                                    P.symName psym ++ "' " ++ req)
 
-tightenSlice :: P.Symbol -> Ranged (Maybe P.Slice) -> ErrorsOr (Ranged Slice)
-tightenSlice psym rslice =
-  copyRange rslice <$>
-  case rangedData rslice of
-    Nothing -> good $ Slice 0 0
-    Just (P.Slice va vb) ->
+tightenSlice :: Ranged P.Symbol -> Maybe (Ranged P.Slice) -> ErrorsOr (Ranged Slice)
+tightenSlice rpsym rslice =
+  case rslice of
+    Nothing -> good $ copyRange rpsym $ Slice 0 0
+    Just (Ranged rng (P.Slice va vb)) ->
       do { (a, b) <- liftA2 (,)
                      (tightenBitSel psym rng va) (tightenBitSel psym rng vb)
          ; if abs (a - b) > toInteger (maxBound :: Int) then
-             bad1 $ (copyRange rslice
+             bad1 $ (Ranged rng $
                      "Difference in bit positions overflows an int.")
            else if (- (max (abs a) (abs b))) < toInteger (minBound :: Int) then
-             bad1 $ (copyRange rslice
+             bad1 $ (Ranged rng $
                      "A bit position in the slice overflows an int.")
            else
-             good $ Slice (fromInteger a) (fromInteger b)
+             good $ Ranged rng $ Slice (fromInteger a) (fromInteger b)
          }
-  where rng = rangedRange rslice
+  where psym = rangedData rpsym
 
-tightenSlices :: S.SymbolArray (Ranged (Maybe P.Slice)) ->
-                 ErrorsOr (S.SymbolArray (Ranged Slice))
-tightenSlices (S.SymbolArray slices) =
-  S.SymbolArray <$> amapEO (S.mapSE' tightenSlice) slices
-
-tightenMST :: S.ModSymbolTable -> ErrorsOr ModSymbolTable
-tightenMST smst =
-  do { slices <- tightenSlices (S.mstPorts smst)
-     ; return $
-       ModSymbolTable (S.mstMap smst) slices (S.mstTriggers smst)
-                      (S.mstRMap smst) (S.mstRecords smst)
-     }
+tightenPortSyms :: SymbolTable (Maybe (Ranged P.Slice)) ->
+                   ErrorsOr (SymbolTable (Ranged Slice))
+tightenPortSyms st = eaToEO $ stTraverseWithSym f st
+  where f sym a = eoToEA undefined $ tightenSlice sym a
 
 tightenModule :: S.Module -> ErrorsOr Module
-tightenModule (S.Module mst stmts) =
-  liftA2 Module (tightenMST mst) (mapEO tightenModStmt stmts)
-
-tightenModules :: S.SymbolArray S.Module -> ErrorsOr (S.SymbolArray Module)
-tightenModules (S.SymbolArray modules) =
-  S.SymbolArray <$> amapEO (S.mapSE tightenModule) modules
+tightenModule mod =
+  do { (psyms, blocks) <- liftA2 (,)
+                          (tightenPortSyms (S.modSyms mod))
+                          (mapEO tightenBlock (S.modBlocks mod))
+     ; good $ Module psyms (S.modRecs mod) blocks
+     }
 
 run :: S.Script -> ErrorsOr Script
-run s = do { mods <- tightenModules $ S.scrModules s
-           ; return $ Script (S.scrMap s) mods (S.scrStmts s)
-           }
+run script =
+  (\ mods -> Script mods (S.scrStmts script)) <$>
+  (traverseEO tightenModule (S.scrMods script))

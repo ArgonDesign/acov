@@ -5,11 +5,12 @@ module Parser
   , Expression(..)
   , Port(..)
   , CoverList(..)
-  , Stmt(..)
-  , TLStmt(..)
   , Slice(..)
   , Atom(..)
+  , Record(..)
+  , Block(..)
   , parseScript
+  , TLStmt(..)
 
   -- Exported just for testing
   , sym
@@ -34,19 +35,14 @@ import Operators
 import VInt
 
 {-
-
   A coverage definition looks something like:
 
      // A module to collect xxx coverage
      module xxx (foo [10:0], bar [19:0], baz [1:0], qux) {
-        trigger florbl;
-        florbl = foo [0];
-
-        when florbl {
+        when (foo [0]) {
           record foo;
+          record foo + bar[10:0] as foobar;
         }
-
-        when florbl record foo + bar[10:0] as foobar;
 
         record baz;
         record qux as qxx;
@@ -55,6 +51,7 @@ import VInt
      cover xxx.foo {0, 12, 2047};
      cover xxx.baz;
      cross xxx.foo xxx.baz;
+
 -}
 newtype Symbol = Symbol String
   deriving (Show, Eq, Ord)
@@ -63,28 +60,21 @@ symName :: Symbol -> String
 symName (Symbol name) = name
 
 data DottedSymbol = DottedSymbol Symbol Symbol
-  deriving Show
 
 newtype CoverList = CoverList [Ranged VInt]
-  deriving Show
 
-data Port = Port Symbol (Maybe Slice)
-  deriving Show
+data Port = Port Symbol (Maybe (Ranged Slice))
 
-data TLStmt = Module (Ranged Symbol) [Ranged Port] [Stmt]
+data TLStmt = Module (Ranged Symbol) [Ranged Port] [Block]
             | Cover (Ranged DottedSymbol) (Maybe CoverList)
             | Cross [Ranged DottedSymbol]
-  deriving Show
 
-data Stmt = StmtTrigger (Ranged Symbol)
-          | StmtAssign (Ranged Symbol) (Ranged Expression)
-          | StmtRecord (Ranged Expression) (Maybe (Ranged Symbol))
-          | StmtWhen (Ranged Symbol) [Ranged Stmt]
-  deriving Show
+data Record = Record (Ranged Expression) (Maybe (Ranged Symbol))
+
+data Block = Block (Maybe (Ranged Expression)) [Record]
 
 data Atom = AtomSym Symbol
           | AtomInt VInt
-  deriving Show
 
 data Expression = ExprAtom Atom
                 | ExprParens (Ranged Expression)
@@ -97,7 +87,6 @@ data Expression = ExprAtom Atom
                   (Ranged Expression) (Ranged Expression)
                 | ExprCond (Ranged Expression)
                   (Ranged Expression) (Ranged Expression)
-  deriving Show
 
 {-
   Our first job is to set up a language definition and get the
@@ -105,7 +94,6 @@ data Expression = ExprAtom Atom
 -}
 reservedNames :: [String]
 reservedNames = [ "module"
-                , "trigger"
                 , "when"
                 , "record"
                 , "as"
@@ -200,7 +188,7 @@ slice = (T.brackets lexer $
 -}
 port :: Parser Port
 port = do { name <- sym
-          ; bits <- optionMaybe slice
+          ; bits <- optionMaybe (rangedParse slice)
           ; return $ Port name bits } <?> "port"
 
 portList :: Parser [Ranged Port]
@@ -317,54 +305,32 @@ expression :: Parser (Ranged Expression)
 expression = do { a <- expression' <?> "expression"
                 ; condTail a <|> return a }
 
-{-
-  Now that we have expressions, we can define statements, which are
-  the internals of a module description. The parser is quite lax and
-  allows any statement on the inside of a "when" etc. We'll strip out
-  any silliness there later.
--}
-
-trigger :: Parser Stmt
-trigger =
-  StmtTrigger <$> (T.reserved lexer "trigger" >>
-                   rangedParse (sym <?> "variable name for trigger") <*
-                   semi)
-
-assignment :: Parser Stmt
-assignment = do { x <- rangedParse sym
-                ; T.reservedOp lexer "="
-                ; rhs <- expression <?> "expression for assignment RHS"
-                ; semi
-                ; return $ StmtAssign x rhs }
-
-record :: Parser Stmt
+record :: Parser Record
 record = do { T.reserved lexer "record"
             ; e <- expression
             ; name <- optionMaybe (T.reserved lexer "as" >> rangedParse sym)
             ; semi
-            ; return $ StmtRecord e name }
+            ; return $ Record e name }
 
-when :: Parser Stmt
-when = do { T.reserved lexer "when"
-          ; a <- rangedParse sym
-          ; b <- T.braces lexer (many rngstmt) <|> (singleton <$> rngstmt)
-          ; return $ StmtWhen a b }
-  where singleton a = [a]
-        rngstmt = rangedParse statement
-
-statement :: Parser Stmt
-statement = trigger <|> record <|> when <|> assignment
+block :: Parser Block
+block = (wrapRec <$> record) <|>
+        do { T.reserved lexer "when"
+           ; guard <- T.parens lexer expression
+           ; recs <- T.braces lexer (many1 record)
+           ; return $ Block (Just guard) recs
+           }
+  where wrapRec r = Block Nothing [r]
 
 {-
   Parsing top-level statements
 -}
 module' :: Parser TLStmt
 module' = do { T.reserved lexer "module"
-         ; name <- rangedParse sym
-         ; pl <- portList
-         ; stmts <- T.braces lexer (many statement)
-         ; return $ Module name pl stmts
-         }
+             ; name <- rangedParse sym
+             ; pl <- portList
+             ; blocks <- T.braces lexer (many1 block)
+             ; return $ Module name pl blocks
+             }
 
 dottedSymbol :: Parser DottedSymbol
 dottedSymbol = do { mod <- sym

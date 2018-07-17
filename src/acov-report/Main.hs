@@ -14,8 +14,10 @@ import Coverage
 import qualified Frontend
 import qualified Symbols as S
 import qualified Width as W
+import qualified Parser as P
 
 import Ranged
+import SymbolTable
 
 data Args = Args
   { input :: FilePath
@@ -48,21 +50,22 @@ getCoverage path =
 
 data Reports = Reports { covers :: Map.Map (String, String) CoverReport }
 
-procStmt :: PerModCoverage -> S.SymbolArray W.Module ->
+procStmt :: PerModCoverage -> SymbolTable W.Module ->
             S.TLStmt -> Reports -> Reports
-procStmt pmc modules (S.Cover rdsym clist) rpts =
+procStmt pmc mods (S.Cover rdsym clist) rpts =
   rpts { covers = Map.insert (modName, recName) cover (covers rpts) }
   where cover = mkCoverReport pmc modName recName recWidth clist
         S.DottedSymbol modsym recsym = rangedData rdsym
-        modName = S.symbolName modules modsym
-        W.Module mst _ = S.symbolData modules modsym
-        recName = S.symbolName (W.mstRecords mst) recsym
-        recWidth = S.symbolData (W.mstRecords mst) recsym
+        getName sym st = P.symName $ rangedData $ stNameAt sym st
+        modName = getName modsym mods
+        recs = W.modRecs $ stAt modsym mods
+        recName = getName recsym recs
+        recWidth = stAt recsym recs
 
 -- TODO: Handle crosses
 procStmt pmc modules (S.Cross rdsyms) rpts = rpts
 
-makeReports :: PerModCoverage -> S.SymbolArray W.Module -> [S.TLStmt] ->
+makeReports :: PerModCoverage -> SymbolTable W.Module -> [S.TLStmt] ->
                Reports
 makeReports pmc mods = foldr (procStmt pmc mods) (Reports Map.empty)
 

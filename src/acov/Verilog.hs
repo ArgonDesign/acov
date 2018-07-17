@@ -14,6 +14,7 @@ import System.IO
 import Operators
 import Ranged
 import VInt
+import SymbolTable
 
 import qualified Parser as P
 import qualified Symbols as S
@@ -32,20 +33,14 @@ showBitSels slices = map expand raw
         expand s = assert (length s <= width) $
                    s ++ replicate (width - length s) ' '
 
-showPorts :: [S.SymbolEntry (Ranged E.Slice)] -> [String]
-showPorts entries =
-  map draw (zip (map S.symbolEntrySymbol entries) sels)
-  where getSlice = rangedData . S.symbolEntryData
-        sels = showBitSels (map getSlice entries)
+showPorts :: [(Ranged P.Symbol, Ranged E.Slice)] -> [String]
+showPorts entries = map draw $ zip names sels
+  where names = [P.Symbol "clk", P.Symbol "rst_n"] ++
+                map (rangedData . fst) entries
+        sels = showBitSels $ ([slice0, slice0] ++
+                              map (rangedData . snd) entries)
+        slice0 = E.Slice 0 0
         draw (sym, sel) = "input wire " ++ sel ++ " " ++ P.symName sym
-
-fakeRange :: LCRange
-fakeRange = LCRange (LCPos 0 0) (LCPos 0 0)
-
-defaultPorts :: [S.SymbolEntry (Ranged E.Slice)]
-defaultPorts =
-  [S.SymbolEntry (P.Symbol "clk") (Ranged fakeRange $ E.Slice 0 0),
-   S.SymbolEntry (P.Symbol "rst_n") (Ranged fakeRange $ E.Slice 0 0)]
 
 fileHeader :: String
 fileHeader =
@@ -70,8 +65,8 @@ imports =
           , ""
           ]
 
-beginModule :: Handle -> P.Symbol -> S.SymbolArray (Ranged E.Slice) -> IO ()
-beginModule handle sym portArray =
+beginModule :: Handle -> P.Symbol -> SymbolTable (Ranged E.Slice) -> IO ()
+beginModule handle sym ports =
   assert (not $ null portStrs) $
   print fileHeader >>
   print start >>
@@ -82,26 +77,28 @@ beginModule handle sym portArray =
   where print = hPutStr handle
         start = "module " ++ P.symName sym ++ "_coverage ("
         indent = ",\n" ++ replicate (length start) ' '
-        ports = S.symbolArrayElems portArray
-        portStrs = showPorts $ defaultPorts ++ ports
+        portStrs = showPorts $ stAssocs ports
 
 -- TODO: This doesn't know about associativity.
 parenthesize :: Int -> String -> Int -> String
 parenthesize this str that = if this <= that then "(" ++ str ++ ")" else str
 
-showExpression :: S.SymbolArray (Ranged E.Slice) -> Int -> Ranged E.Expression -> String
+symName :: SymbolTable a -> Symbol -> String
+symName st sym = P.symName $ rangedData $ stNameAt sym st
+
+showExpression :: SymbolTable (Ranged E.Slice) -> Int -> Ranged E.Expression -> String
 showExpression syms that rexpr =
   let (this, str) = showExpression' syms (rangedData rexpr) in
     parenthesize this str that
 
-showExpression' :: S.SymbolArray (Ranged E.Slice) -> E.Expression -> (Int, String)
+showExpression' :: SymbolTable (Ranged E.Slice) -> E.Expression -> (Int, String)
 
-showExpression' syms (E.ExprSym sym) = (100, S.symbolName syms sym)
+showExpression' syms (E.ExprSym sym) = (100, symName syms sym)
 
 showExpression' _ (E.ExprInt vint) = (100, printVInt vint)
 
 showExpression' syms (E.ExprSel rsym ra rb) =
-  (100, S.symbolName syms (rangedData rsym) ++ "[" ++
+  (100, symName syms (rangedData rsym) ++ "[" ++
         se ra ++ (case rb of Nothing -> "]" ; Just rb' -> ":" ++ se rb' ++ "]"))
   where se = showExpression syms 1
 
@@ -128,41 +125,12 @@ showExpression' syms (E.ExprCond ra rb rc) =
   (1, se ra ++ " ? " ++ se rb ++ " : " ++ se rc)
   where se = showExpression syms 1
 
-showExpression64 :: Int -> S.SymbolArray (Ranged E.Slice) ->
+showExpression64 :: Int -> SymbolTable (Ranged E.Slice) ->
                     Ranged E.Expression -> String
 showExpression64 w syms rexpr =
   if w /= 64 then "{" ++ show (64 - w) ++ "'b0, " ++ rest ++ "}"
   else rest
   where rest = showExpression syms 0 rexpr
-
-triggers :: [E.ModStmt] -> [(S.Symbol, Ranged E.Expression)]
-triggers = mapMaybe unpackTrigger
-  where unpackTrigger (E.Assign a b) = Just (rangedData a, b)
-        unpackTrigger (E.Record _ _ _) = Nothing
-
-records :: [E.ModStmt] -> [(Maybe S.Symbol, Ranged E.Expression, S.Symbol)]
-records = mapMaybe unpackRecord
-  where unpackRecord (E.Assign _ _) = Nothing
-        unpackRecord (E.Record a b c) =
-          Just (rangedData <$> a, b, rangedData c)
-
-writeTrigger :: Handle -> S.SymbolArray (Ranged E.Slice) -> S.SymbolArray () ->
-                S.Symbol -> Ranged E.Expression -> IO ()
-writeTrigger handle ports triggers sym expr =
-  put "  wire " >>
-  put name >>
-  put ";\n  assign " >>
-  put name >>
-  put " = " >>
-  put (showExpression ports 0 expr) >>
-  put ";\n\n"
-  where put = hPutStr handle
-        name = S.symbolName triggers sym
-
-writeTriggers :: Handle -> S.SymbolArray (Ranged E.Slice) -> S.SymbolArray () -> 
-                 [(S.Symbol, Ranged E.Expression)] -> IO ()
-writeTriggers handle ports triggers =
-  mapM_ (\ (s, re) -> writeTrigger handle ports triggers s re)
 
 startAlways :: Handle -> IO ()
 startAlways handle =
@@ -170,63 +138,64 @@ startAlways handle =
   put "    if (rst_n) begin\n"
   where put = hPutStr handle 
 
-writeGuard :: Handle -> S.SymbolArray () -> Maybe S.Symbol -> IO ()
-writeGuard handle triggers Nothing = return ()
-writeGuard handle triggers (Just sym) =
+startGuard :: Handle -> SymbolTable (Ranged E.Slice) ->
+              Maybe (Ranged E.Expression) -> IO Bool
+startGuard _ _ Nothing = return False
+startGuard handle syms (Just guard) =
   hPutStr handle "if (" >>
-  hPutStr handle (S.symbolName triggers sym) >>
-  hPutStr handle ") "
+  hPutStr handle (showExpression syms 100 guard) >>
+  hPutStr handle ") begin\n" >>
+  return True
 
-writeRecord ::
-  Handle ->
-  S.SymbolArray (Ranged E.Slice) -> S.SymbolArray () -> S.SymbolArray Int ->
-  P.Symbol -> Maybe S.Symbol -> Ranged E.Expression -> S.Symbol ->
-  IO ()
-writeRecord handle ports triggers records modname guard expr recname =
-  put "      " >>
-  writeGuard handle triggers guard >>
-  put "acov_record" >>
-  put " (\"" >>
-  put (P.symName modname) >>
-  put "." >>
-  put (S.symbolName records recname) >>
-  put "\", " >>
-  put (showExpression64 width ports expr) >>
-  put ");\n"
-  where put = hPutStr handle
-        width = S.symbolData records recname
+writeRecord :: Handle -> P.Symbol -> SymbolTable (Ranged E.Slice) ->
+               SymbolTable Int -> Bool -> E.Record -> IO ()
+writeRecord handle modname syms recs guarded (E.Record expr recsym) =
+   put (if guarded then "  " else "" ++ "      ") >>
+   put "acov_record" >>
+   put " (\"" >>
+   put (P.symName modname) >>
+   put "." >>
+   put (symName recs recsym) >>
+   put "\", " >>
+   put (showExpression64 width syms expr) >>
+   put ");\n"
+   where put = hPutStr handle
+         width = stAt recsym recs
 
-writeRecords ::
-  Handle ->
-  S.SymbolArray (Ranged E.Slice) -> S.SymbolArray () -> S.SymbolArray Int ->
-  P.Symbol -> [(Maybe S.Symbol, Ranged E.Expression, S.Symbol)] ->
-  IO ()
-writeRecords handle ports triggers records mname =
-  mapM_ (\ (g, e, n) -> writeRecord handle ports triggers records mname g e n)
+endGuard :: Handle -> Bool -> IO ()
+endGuard _ False = return ()
+endGuard handle True = hPutStr handle "      end\n"
 
-endBlocks :: Handle -> IO ()
-endBlocks handle = put "    end\n  end\nendmodule\n\n" >> put fileFooter
+
+writeBlock :: Handle -> P.Symbol -> SymbolTable (Ranged E.Slice) ->
+              SymbolTable Int -> E.Block -> IO ()
+writeBlock handle modname symST recST (E.Block guard recs) =
+  do { guarded <- startGuard handle symST guard
+     ; mapM_ (writeRecord handle modname symST recST guarded) recs
+     ; endGuard handle guarded
+     }
+
+endModule :: Handle -> IO ()
+endModule handle = put "    end\n  end\nendmodule\n\n" >> put fileFooter
   where put = hPutStr handle
 
 writeModule :: Handle -> P.Symbol -> W.Module -> IO ()
-writeModule handle name (W.Module mst stmts) =
-  beginModule handle name pts >>
-  writeTriggers handle pts tgs (triggers stmts) >>
+writeModule handle name mod =
+  beginModule handle name (W.modSyms mod) >>
   startAlways handle >>
-  writeRecords handle pts tgs rcs name (records stmts) >>
-  endBlocks handle
-  where pts = W.mstPorts mst
-        tgs = W.mstTriggers mst
-        rcs = W.mstRecords mst
+  mapM_ (writeBlock handle name (W.modSyms mod) (W.modRecs mod))
+  (W.modBlocks mod) >>
+  endModule handle
+
 
 dumpModule :: FilePath -> P.Symbol -> W.Module -> IO ()
 dumpModule dirname name mod =
   withFile (dirname </> (P.symName name ++ "_coverage.v")) WriteMode
   (\ h -> writeModule h name mod)
 
-dumpModules :: FilePath -> S.SymbolArray W.Module -> IO ()
-dumpModules dirname (S.SymbolArray mods) = mapM_ doSE $ elems mods
-  where doSE (S.SymbolEntry name mod) = dumpModule dirname name mod
+dumpModules :: FilePath -> SymbolTable W.Module -> IO ()
+dumpModules dirname mods = stTraverseWithSym_ f mods
+  where f modname mod = dumpModule dirname (rangedData modname) mod
 
 run :: FilePath -> W.Script -> IO ()
 run dirname scr =

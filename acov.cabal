@@ -17,11 +17,13 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     Ranged
+                     , ErrorsAnd
                      , ErrorsOr
                      , Operators
                      , VInt
+                     , CList
                      , Parser
-                     , When
+                     , SymbolTable
                      , Symbols
                      , Expressions
                      , Width

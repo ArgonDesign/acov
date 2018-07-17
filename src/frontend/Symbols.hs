@@ -1,22 +1,15 @@
 module Symbols
-  ( run
-  , Symbol(..)
-  , symbolIdx
-  , DottedSymbol(..)
+  ( Script(..)
+  , TLStmt(..)
+  , Module(..)
+  , Block(..)
+  , Record(..)
   , Expression(..)
   , Atom(..)
-  , ModSymbolTable(..)
-  , ModSymIdx(..)
-  , SymbolArray(..)
-  , symbolArrayElems , symbolData , symbolName
-  , SymbolEntry(..)
-  , symbolEntryData , symbolEntrySymbol
-  , mapSE , mapSE'
-  , TLStmt(..)
-  , ModStmt(..)
-  , Module(..)
-  , Script(..)
-  ) where
+  , DottedSymbol(..)
+  , run
+  )
+  where
 
 {-
   The symbols pass creates a global symbol table for storing module
@@ -34,25 +27,18 @@ import Data.Functor ((<$>))
 import qualified Data.Map.Strict as Map
 import Data.Array
 
-import qualified Parser as P
-import qualified When as W
 import ErrorsOr
 import Operators
 import VInt
 import Ranged
+import SymbolTable
 
-newtype Symbol = Symbol Int
-  deriving (Show, Eq, Ord)
-
-symbolIdx :: Symbol -> Int
-symbolIdx (Symbol n) = n
+import qualified Parser as P
 
 data DottedSymbol = DottedSymbol Symbol Symbol
-  deriving Show
 
 data Atom = AtomSym Symbol
           | AtomInt VInt
-  deriving Show
 
 data Expression = ExprAtom Atom
                 | ExprParens (Ranged Expression)
@@ -65,392 +51,184 @@ data Expression = ExprAtom Atom
                   (Ranged Expression) (Ranged Expression)
                 | ExprCond (Ranged Expression)
                   (Ranged Expression) (Ranged Expression)
-  deriving Show
 
-data ModStmt = Assign (Ranged Symbol) (Ranged Expression)
-             | Record (Maybe (Ranged Symbol))
-               (Ranged Expression) (Ranged Symbol)
-  deriving Show
+data Record = Record (Ranged Expression) Symbol
 
-data Module = Module ModSymbolTable [ModStmt]
-  deriving Show
+data Block = Block (Maybe (Ranged Expression)) [Record]
 
 data TLStmt = Cover (Ranged DottedSymbol) (Maybe P.CoverList)
             | Cross [Ranged DottedSymbol]
-  deriving Show
 
 {-
-  A module will be represented by a symbol table, together with a list
-  of statements.
-
-  First, we define how to build a symbol table for a module. The end
-  result will be a ModSymbolTable. The first parameter is a map from
-  name (wrapped up as a P.Symbol) to a generalised index (a type and
-  an integer).
-
-  The other parameters give ports, triggers and records.
+  PortSyms is the symbol table for ports of a module.
 -}
-data IType = PortType | TriggerType
-  deriving Show
+type PortSyms = SymbolTable (Maybe (Ranged P.Slice))
 
-data ModSymIdx = ModSymIdx IType Symbol
-  deriving Show
-
-data SymbolEntry a = SymbolEntry P.Symbol a
-  deriving Show
-
-symbolEntryData :: SymbolEntry a -> a
-symbolEntryData (SymbolEntry sym a) = a
-
-symbolEntrySymbol :: SymbolEntry a -> P.Symbol
-symbolEntrySymbol (SymbolEntry sym a) = sym
-
-mapSE :: Functor f => (a -> f b) -> SymbolEntry a -> f (SymbolEntry b)
-mapSE f (SymbolEntry sym a) = SymbolEntry sym <$> f a
-
-mapSE' :: Functor f =>
-          (P.Symbol -> a -> f b) -> SymbolEntry a -> f (SymbolEntry b)
-mapSE' f (SymbolEntry sym a) = SymbolEntry sym <$> f sym a
-
-newtype SymbolArray a = SymbolArray (Array Int (SymbolEntry a))
-  deriving Show
-
-symbolArrayElems :: SymbolArray a -> [SymbolEntry a]
-symbolArrayElems (SymbolArray a) = elems a
-
-symbolName :: SymbolArray a -> Symbol -> String
-symbolName (SymbolArray a) (Symbol i) = P.symName $ symbolEntrySymbol $ a ! i
-
-symbolData :: SymbolArray a -> Symbol -> a
-symbolData (SymbolArray a) (Symbol i) = symbolEntryData (a ! i)
-
-data ModSymbolTable = ModSymbolTable { mstMap :: Map.Map String ModSymIdx
-                                     , mstPorts :: SymbolArray (Ranged (Maybe P.Slice))
-                                     , mstTriggers :: SymbolArray ()
-                                     , mstRMap :: Map.Map String Symbol
-                                     , mstRecords :: SymbolArray ()
-                                     }
-  deriving Show
+readPorts :: [Ranged P.Port] -> ErrorsOr PortSyms
+readPorts ports = stbToSymbolTable <$> foldEO takePort stbEmpty ports
+  where takePort bld rp =
+          let P.Port sym slice = rangedData rp in
+            stbAdd "port" bld (rangedRange rp) (copyRange rp sym) slice
 
 {-
-  As well as a module symbol table for each module, we have a symbol
-  table for the entire file (that remembers module names). Wrapping
-  that up with the lists of modules and top-level statements gives the
-  entire script.
+  Given a PortSyms instance, we can try to make sense of a
+  P.Expression. This is just a big structural recursion over the
+  syntax.
 -}
-data Script = Script { scrMap :: Map.Map String Symbol
-                     , scrModules :: SymbolArray Module
-                     , scrStmts :: [TLStmt]
-                     }
-  deriving Show
+readAtom :: PortSyms -> LCRange -> P.Atom -> ErrorsOr Expression
+readAtom _ _ (P.AtomInt vint) = good $ ExprAtom (AtomInt vint)
+readAtom ps rng (P.AtomSym psym) =
+  case stLookup psym ps of
+    Nothing -> bad1 $ (Ranged rng $ "undeclared symbol: " ++ name ++ ".")
+    Just sym -> good $ ExprAtom (AtomSym sym)
+  where name = P.symName psym
 
-{-
-  To build a ModSymbolTable, we use an MSBuilder.
+readParens :: PortSyms -> Ranged P.Expression -> ErrorsOr Expression
+readParens ps expr = ExprParens <$> readExpression ps expr
 
-  We work through the module's statements in order with a foldl' but
-  cons elements on to the list, so msbPorts, msbTriggers, msbRecords
-  and msbStatements all come out backwards.
--}
-data CList a = CList Int [a]
-
-clCons :: a -> CList a -> CList a
-clCons a (CList n as) = CList (n + 1) (a : as)
-
-clLen :: CList a -> Int
-clLen (CList n _) = n
-
-clEmpty :: CList a
-clEmpty = CList 0 []
-
-clArray :: CList a -> Array Int a
-clArray (CList n as) = listArray (0, n - 1) (reverse as)
-
-clMap :: (a -> b) -> CList a -> CList b
-clMap f (CList n as) = CList n $ map f as
-
-clAt :: Symbol -> CList a -> a
-clAt (Symbol idx) (CList n as) = as !! (n - 1 - idx)
-
-data MSBuilder =
-  MSBuilder { msbMap :: Map.Map String ModSymIdx
-            , msbPorts :: CList (SymbolEntry (Ranged (Maybe P.Slice)))
-            , msbTriggers :: CList P.Symbol
-            , msbRMap :: Map.Map String Symbol
-            , msbRecords :: CList P.Symbol
-            , msbStatements :: [ModStmt]
-            }
-
-msbInit :: MSBuilder
-msbInit = MSBuilder Map.empty clEmpty clEmpty Map.empty clEmpty []
-
-{-
-  Given an MSBuilder, we can intern expressions. Doing it with the
-  builder rather than the eventual symbol table means we can spot
-  errors like this:
-
-    module a (foo [10:0]) {
-      x = foo [0];
-      trigger x;
-    }
--}
-
-msbAtom :: MSBuilder -> LCRange -> P.Atom -> ErrorsOr Expression
-msbAtom msb _ (P.AtomInt vint) = good $ ExprAtom (AtomInt vint)
-msbAtom msb rng (P.AtomSym psym) =
-  case Map.lookup (P.symName psym) (msbMap msb) of
-    Nothing -> bad1 $ (Ranged rng $
-                       "undeclared symbol: " ++ P.symName psym ++ ".")
-    Just (ModSymIdx t sym) ->
-      case t of
-        PortType -> good $ ExprAtom (AtomSym sym)
-        TriggerType -> bad1 (Ranged rng $
-                             "symbol `" ++ P.symName psym ++
-                             "' names a trigger, not a port.")
-
-msbParens :: MSBuilder -> Ranged P.Expression -> ErrorsOr Expression
-msbParens msb expr = ExprParens <$> msbExpression msb expr
-
-msbSel :: MSBuilder -> Ranged P.Expression ->
-          Ranged P.Expression -> Maybe (Ranged P.Expression) ->
-          ErrorsOr Expression
-msbSel msb var top bot =
-  liftA3 ExprSel (intern var) (intern top) (eoMaybe (intern <$> bot))
-  where intern = msbExpression msb
-
-msbConcat :: MSBuilder -> [Ranged P.Expression] -> ErrorsOr Expression
-msbConcat msb exprs = ExprConcat <$> mapEO (msbExpression msb) exprs
-
-msbReplicate :: MSBuilder -> Ranged P.Expression ->
-                Ranged P.Expression -> ErrorsOr Expression
-msbReplicate msb count val = liftA2 ExprReplicate (intern count) (intern val)
-  where intern = msbExpression msb
-
-msbUnOp :: MSBuilder -> Ranged UnOp -> Ranged P.Expression ->
+readSel :: PortSyms -> Ranged P.Expression ->
+           Ranged P.Expression -> Maybe (Ranged P.Expression) ->
            ErrorsOr Expression
-msbUnOp msb unop expr = ExprUnOp unop <$> msbExpression msb expr
+readSel ps var top bot = liftA3 ExprSel (f var) (f top) (eoMaybe (f <$> bot))
+  where f = readExpression ps
 
-msbBinOp :: MSBuilder -> Ranged BinOp -> Ranged P.Expression ->
+readConcat :: PortSyms -> [Ranged P.Expression] -> ErrorsOr Expression
+readConcat ps exprs = ExprConcat <$> mapEO (readExpression ps) exprs
+
+readReplicate :: PortSyms -> Ranged P.Expression ->
+                 Ranged P.Expression -> ErrorsOr Expression
+readReplicate ps count val = liftA2 ExprReplicate (read count) (read val)
+  where read = readExpression ps
+
+readUnOp :: PortSyms -> Ranged UnOp -> Ranged P.Expression ->
+            ErrorsOr Expression
+readUnOp ps unop expr = ExprUnOp unop <$> readExpression ps expr
+
+readBinOp :: PortSyms -> Ranged BinOp -> Ranged P.Expression ->
+             Ranged P.Expression -> ErrorsOr Expression
+readBinOp ps binop e0 e1 = liftA2 (ExprBinOp binop) (read e0) (read e1)
+  where read = readExpression ps
+
+readCond :: PortSyms -> Ranged P.Expression -> Ranged P.Expression ->
             Ranged P.Expression -> ErrorsOr Expression
-msbBinOp msb binop e0 e1 = liftA2 (ExprBinOp binop) (intern e0) (intern e1)
-  where intern = msbExpression msb
+readCond ps e0 e1 e2 = liftA3 ExprCond (read e0) (read e1) (read e2)
+  where read = readExpression ps
 
-msbCond :: MSBuilder -> Ranged P.Expression -> Ranged P.Expression ->
-           Ranged P.Expression -> ErrorsOr Expression
-msbCond msb e0 e1 e2 = liftA3 ExprCond (intern e0) (intern e1) (intern e2)
-  where intern = msbExpression msb
+readExpression' :: PortSyms -> LCRange -> P.Expression -> ErrorsOr Expression
+readExpression' ps rng (P.ExprAtom a) = readAtom ps rng a
+readExpression' ps _ (P.ExprParens e) = readParens ps e
+readExpression' ps _ (P.ExprSel v t b) = readSel ps v t b
+readExpression' ps _ (P.ExprConcat es) = readConcat ps es
+readExpression' ps _ (P.ExprReplicate c v) = readReplicate ps c v
+readExpression' ps _ (P.ExprUnOp uo e) = readUnOp ps uo e
+readExpression' ps _ (P.ExprBinOp bo e0 e1) = readBinOp ps bo e0 e1
+readExpression' ps _ (P.ExprCond e0 e1 e2) = readCond ps e0 e1 e2
 
-msbExpression' :: MSBuilder -> LCRange -> P.Expression -> ErrorsOr Expression
-msbExpression' msb rng (P.ExprAtom a) = msbAtom msb rng a
-msbExpression' msb _ (P.ExprParens e) = msbParens msb e
-msbExpression' msb _ (P.ExprSel v t b) = msbSel msb v t b
-msbExpression' msb _ (P.ExprConcat es) = msbConcat msb es
-msbExpression' msb _ (P.ExprReplicate c v) = msbReplicate msb c v
-msbExpression' msb _ (P.ExprUnOp uo e) = msbUnOp msb uo e
-msbExpression' msb _ (P.ExprBinOp bo e0 e1) = msbBinOp msb bo e0 e1
-msbExpression' msb _ (P.ExprCond e0 e1 e2) = msbCond msb e0 e1 e2
-
-msbExpression :: MSBuilder -> Ranged P.Expression -> ErrorsOr (Ranged Expression)
-msbExpression msb rexpr =
-  copyRange rexpr <$> msbExpression' msb (rangedRange rexpr) (rangedData rexpr)
+readExpression :: PortSyms -> Ranged P.Expression -> ErrorsOr (Ranged Expression)
+readExpression ps rexpr =
+  copyRange rexpr <$> readExpression' ps (rangedRange rexpr) (rangedData rexpr)
 
 {-
-  Now we define the various methods that update the MSBuilder state
-  as it reads statements.
+  We want to build up a module instance. This will contain a PortSyms
+  for the input ports, together with a symbol table for record
+  statements and a list of blocks. While building this list of blocks,
+  we'll generate the symbol table for record statements.
 -}
-
-addSym :: P.Symbol -> IType -> Int -> MSBuilder -> MSBuilder
-addSym psym typ n msb =
-  msb { msbMap = Map.insert (P.symName psym)
-                 (ModSymIdx typ (Symbol n)) (msbMap msb) }
-
-msbTakePort :: MSBuilder -> Ranged P.Port -> ErrorsOr MSBuilder
-msbTakePort msb rp =
-  if Map.member (P.symName psym) (msbMap msb)
-  then bad1 (copyRange rp $
-              "duplicate port in module: " ++ P.symName psym ++ ".")
-  else good (addSym psym PortType nports msb
-              { msbPorts =
-                clCons (SymbolEntry psym (copyRange rp slice)) ports })
-  where P.Port psym slice = rangedData rp
-        ports = msbPorts msb
-        nports = clLen ports
-
-msbTakePorts :: MSBuilder -> [Ranged P.Port] -> ErrorsOr MSBuilder
-msbTakePorts = foldEO msbTakePort
-
-msbTakeTrigger :: MSBuilder -> Ranged P.Symbol -> ErrorsOr MSBuilder
-msbTakeTrigger msb rpsym =
-  if Map.member (P.symName psym) (msbMap msb)
-  then bad1 (copyRange rpsym
-              "trigger declaration shadows existing symbol.")
-  else good (addSym psym TriggerType ntrigs msb
-              { msbTriggers = clCons psym trigs })
-  where psym = rangedData rpsym
-        trigs = msbTriggers msb
-        ntrigs = clLen trigs
-
-msbTrigger :: MSBuilder -> Ranged P.Symbol -> ErrorsOr (Ranged Symbol)
-msbTrigger msb rpsym =
-  case Map.lookup name (msbMap msb) of
-    Nothing -> bad1 $ (copyRange rpsym $
-                       "assigning to undeclared symbol `" ++ name ++ "'.")
-    Just (ModSymIdx t sym) ->
-      case t of
-        PortType -> bad1 $ (copyRange rpsym $
-                            "assigning to port symbol `" ++ name ++ "'.")
-        TriggerType -> good $ copyRange rpsym sym
-  where name = P.symName (rangedData rpsym)
-
-msbAddStmt :: ModStmt -> MSBuilder -> MSBuilder
-msbAddStmt stmt msb = msb { msbStatements = stmt : (msbStatements msb) }
-
-msbTakeAssign :: MSBuilder -> Ranged P.Symbol ->
-                 Ranged P.Expression -> ErrorsOr MSBuilder
-msbTakeAssign msb rpsym expr =
-  liftA2 addAssign (msbTrigger msb rpsym) (msbExpression msb expr)
-  where addAssign rsym rexpr = msbAddStmt (Assign rsym rexpr) msb
-
-msbTakeRecName :: MSBuilder -> Ranged P.Symbol ->
-                  ErrorsOr (Ranged Symbol, MSBuilder)
-msbTakeRecName msb rpsym =
-  if Map.member name (msbRMap msb)
-  then bad1 (copyRange rpsym $
-             "duplicate records with name `" ++ name ++ "' in module.")
-  else good $ (copyRange rpsym sym,
-               msb { msbRMap = Map.insert name sym (msbRMap msb)
-                   , msbRecords = clCons psym (msbRecords msb)
-                   })
-  where psym = rangedData rpsym
-        name = P.symName psym
-        sym = Symbol (clLen (msbRecords msb))
-
-msbTakeRecord :: MSBuilder -> Maybe (Ranged P.Symbol) ->
-                 Ranged P.Expression -> Ranged P.Symbol ->
-                 ErrorsOr MSBuilder
-msbTakeRecord msb trig expr recname =
-  liftA3 takeIt
-  (eoMaybe (msbTrigger msb <$> trig))
-  (msbExpression msb expr)
-  (msbTakeRecName msb recname)
-  where takeIt sym' expr' (recname', msb') =
-          msbAddStmt (Record sym' expr' recname') msb'
-
-msbTakeStmt :: MSBuilder -> W.ModStmt -> ErrorsOr MSBuilder
-msbTakeStmt msb (W.Trigger psym) = msbTakeTrigger msb psym
-msbTakeStmt msb (W.Assign lhs rhs) = msbTakeAssign msb lhs rhs
-msbTakeStmt msb (W.Record trig expr name) = msbTakeRecord msb trig expr name
-
-msbTakeStmts :: MSBuilder -> [W.ModStmt] -> ErrorsOr MSBuilder
-msbTakeStmts = foldEO msbTakeStmt
-
-msbBuild :: [Ranged P.Port] -> [W.ModStmt] -> ErrorsOr MSBuilder
-msbBuild ports stmts = do { msb <- msbTakePorts msbInit ports
-                          ; msbTakeStmts msb stmts
-                          }
-
-{-
-  Finally, we need to define how to convert an MSBuilder to an actual
-  symbol table.
--}
-makeSymbolArray :: CList P.Symbol -> SymbolArray ()
-makeSymbolArray cl = SymbolArray (clArray (clMap (\ s -> SymbolEntry s ()) cl))
-
-msbToModule :: MSBuilder -> Module
-msbToModule msb =
-  Module (ModSymbolTable (msbMap msb)
-           (SymbolArray $ clArray (msbPorts msb))
-           (makeSymbolArray $ msbTriggers msb)
-           (msbRMap msb)
-           (makeSymbolArray $ msbRecords msb))
-         (msbStatements msb)
-
-moduleContents :: [Ranged P.Port] -> [W.ModStmt] -> ErrorsOr Module
-moduleContents ports stmts = msbToModule <$> msbBuild ports stmts
-
-{-
-  Now we define a TLBuilder, used for building the top-level symbol
-  table that becomes a Script object.
--}
-data TLBuilder = TLBuilder { tlbMap :: Map.Map String Symbol
-                           , tlbModules :: CList (SymbolEntry Module)
-                           , tlbStmts :: [TLStmt]
-                           }
+recordName :: P.Record -> ErrorsOr (Ranged P.Symbol)
+recordName (P.Record _ (Just rsym)) = good rsym
+recordName (P.Record expr Nothing) =
+  case rangedData expr of
+    P.ExprAtom (P.AtomSym sym) -> good $ copyRange expr $ sym
+    _ -> (bad1 $ copyRange expr
+           "Cannot guess a name for recorded expression.")
 
 
-tlbInit :: TLBuilder
-tlbInit = TLBuilder Map.empty clEmpty []
+takeRecord :: PortSyms -> (STBuilder (), [Record]) -> P.Record ->
+              ErrorsOr (STBuilder (), [Record])
+takeRecord ps (stb, rs) record =
+  do { recname <- recordName record
+     ; (stb', expr') <- liftA2 (,)
+                        (stbAdd "record" stb (rangedRange expr) recname ())
+                        (readExpression ps expr)
+     ; return $ (stb', Record expr' (stbLastSymbol stb') : rs)
+     }
+  where P.Record expr _ = record
+        addRec x = x : rs
 
-tlbRegModule :: TLBuilder -> Ranged P.Symbol -> Module -> ErrorsOr TLBuilder
-tlbRegModule tlb rpname mod =
-  if Map.member name (tlbMap tlb)
-  then bad1 (copyRange rpname $
-             "duplicate module with name `" ++ name ++ "'.")
-  else good (tlb { tlbMap = Map.insert name sym (tlbMap tlb)
-                 , tlbModules = clCons symEntry (tlbModules tlb) })
-  where pname = rangedData rpname
-        name = P.symName pname
-        sym = Symbol (clLen (tlbModules tlb))
-        symEntry = SymbolEntry pname mod
 
-tlbTakeModule :: TLBuilder -> Ranged P.Symbol -> 
-                 [Ranged P.Port] -> [W.ModStmt] -> ErrorsOr TLBuilder
-tlbTakeModule tlb rpname ports stmts =
-  moduleContents ports stmts >>= tlbRegModule tlb rpname
+takeBlock :: PortSyms -> (STBuilder (), [Block]) -> P.Block ->
+             ErrorsOr (STBuilder (), [Block])
+takeBlock ps (stb, blocks) (P.Block mre records) =
+  do { (guard, (stb', records')) <- liftA2 (,)
+                                    (readMaybe mre)
+                                    (foldEO (takeRecord ps) (stb, []) records)
+     ; return $ (stb', Block guard (reverse records') : blocks)
+     }
+  where readMaybe Nothing = return Nothing
+        readMaybe (Just e) = Just <$> readExpression ps e
 
-tlbGetModule :: TLBuilder -> LCRange -> P.Symbol -> ErrorsOr (Symbol, Module)
-tlbGetModule tlb rng psym =
-  case Map.lookup (P.symName psym) (tlbMap tlb) of
-    Nothing -> bad1 (Ranged rng $
-                     "no such module: `" ++ P.symName psym ++ "'.")
-    Just sym -> good (sym, symbolEntryData (clAt sym (tlbModules tlb)))
 
-modGetSymbol :: Module -> LCRange -> P.Symbol -> ErrorsOr Symbol
-modGetSymbol (Module mst _) rng psym =
-  case Map.lookup (P.symName psym) (mstRMap mst) of
-    Nothing -> bad1 (Ranged rng $
-                     "module does not define a record with name `" ++ 
-                     P.symName psym ++ "'.")
-    Just sym -> good sym
- 
-tlbDottedSymbol :: TLBuilder -> Ranged P.DottedSymbol ->
-                   ErrorsOr (Ranged DottedSymbol)
-tlbDottedSymbol tlb rds =
-  do { (sym, mod) <- tlbGetModule tlb (rangedRange rds) mname
-     ; record <- modGetSymbol mod (rangedRange rds) sname
+data Module = Module { modSyms :: PortSyms
+                     , modRecs :: SymbolTable ()
+                     , modBlocks :: [Block]
+                     }
+
+readModule :: [Ranged P.Port] -> [P.Block] -> ErrorsOr Module
+readModule ports pblocks =
+  do { ps <- readPorts ports
+     ; (stb, blocks) <- foldEO (takeBlock ps) (stbEmpty, []) pblocks
+     ; return $ Module ps (stbToSymbolTable stb) (reverse blocks)
+     }
+
+takeModule :: STBuilder Module ->
+              Ranged P.Symbol -> [Ranged P.Port] -> [P.Block] ->
+              ErrorsOr (STBuilder Module)
+takeModule stb name ports blocks =
+  readModule ports blocks >>= stbAdd "module" stb (rangedRange name) name
+
+readDottedSymbol :: STBuilder Module -> Ranged P.DottedSymbol ->
+                    ErrorsOr (Ranged DottedSymbol)
+readDottedSymbol stb rds =
+  do { (sym, mod) <- stbGet "module" rng mname stb
+     ; record <- fst <$> stGet "record" rng sname (modRecs mod)
      ; return $ copyRange rds (DottedSymbol sym record)
      }
-  where P.DottedSymbol mname sname = rangedData rds
+   where P.DottedSymbol mname sname = rangedData rds
+         rng = rangedRange rds
 
-tlbAddStmt :: TLBuilder -> TLStmt -> TLBuilder
-tlbAddStmt tlb stmt = tlb { tlbStmts = stmt : (tlbStmts tlb) }
-
-tlbTakeCover :: TLBuilder -> Ranged P.DottedSymbol -> Maybe P.CoverList ->
-                ErrorsOr TLBuilder
-tlbTakeCover tlb rpds coverlist =
-  do { rds <- tlbDottedSymbol tlb rpds
-     ; return $ tlbAddStmt tlb (Cover rds coverlist)
+readCover :: STBuilder Module -> Ranged P.DottedSymbol -> Maybe P.CoverList ->
+             ErrorsOr TLStmt
+readCover stb rpds coverlist =
+  do { rds <- readDottedSymbol stb rpds
+     ; return $ Cover rds coverlist
      }
 
-tlbTakeCross :: TLBuilder -> [Ranged P.DottedSymbol] -> ErrorsOr TLBuilder
-tlbTakeCross tlb lst =
-  (tlbAddStmt tlb . Cross) <$> mapEO (tlbDottedSymbol tlb) lst
+readCross :: STBuilder Module -> [Ranged P.DottedSymbol] -> ErrorsOr TLStmt
+readCross stb lst = Cross <$> mapEO (readDottedSymbol stb) lst
 
-tlbTakeStmt :: TLBuilder -> W.TLStmt -> ErrorsOr TLBuilder
-tlbTakeStmt tlb (W.Module name pts stmts) = tlbTakeModule tlb name pts stmts
-tlbTakeStmt tlb (W.Cover name clist) = tlbTakeCover tlb name clist
-tlbTakeStmt tlb (W.Cross names) = tlbTakeCross tlb names
+takeTLStmt :: (STBuilder Module, [TLStmt]) -> P.TLStmt ->
+              ErrorsOr (STBuilder Module, [TLStmt])
 
-tlbTakeStmts :: TLBuilder -> [W.TLStmt] -> ErrorsOr TLBuilder
-tlbTakeStmts = foldEO tlbTakeStmt
+takeTLStmt (stb, stmts) (P.Module name ports blocks) =
+  do { stb' <- takeModule stb name ports blocks
+     ; return (stb', stmts)
+     }
 
-tlbReadScript :: W.Script -> ErrorsOr TLBuilder
-tlbReadScript (W.Script stmts) = tlbTakeStmts tlbInit stmts
+takeTLStmt (stb, stmts) (P.Cover name clist) =
+  do { stmt <- readCover stb name clist
+     ; return (stb, stmt : stmts)
+     }
 
-tlbToScript :: TLBuilder -> Script
-tlbToScript tlb = Script
-                  (tlbMap tlb)
-                  (SymbolArray $ clArray (tlbModules tlb))
-                  (tlbStmts tlb)
+takeTLStmt (stb, stmts) (P.Cross names) =
+  do { stmt <- readCross stb names
+     ; return (stb, stmt : stmts)
+     }
 
-run :: W.Script -> ErrorsOr Script
-run = fmap tlbToScript . tlbReadScript
+data Script = Script { scrMods :: SymbolTable Module
+                     , scrStmts :: [TLStmt]
+                     }
+
+run :: [P.TLStmt] -> ErrorsOr Script
+run pstmts = do { (stb, stmts) <- foldEO takeTLStmt (stbEmpty, []) pstmts
+                ; return $ Script (stbToSymbolTable stb) (reverse stmts)
+                }
