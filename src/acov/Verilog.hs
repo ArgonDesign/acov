@@ -144,7 +144,7 @@ writeWire handle syms (idx, grp) =
   put name >>
   put " = " >>
   put (snd $ showExpression' syms (E.ExprConcat (head exprs) (tail exprs))) >>
-  put ";\n" >>
+  put ";\n\n" >>
   return (W.grpGuard grp, width)
   where put = hPutStr handle
         name = "acov_recgroup_" ++ show idx
@@ -181,7 +181,10 @@ showRecArgs idx width =
   rst False (quot width 64) ++ "}"
   where pad = 63 - rem (width + 63) 64
         name = "acov_recgroup_" ++ show idx
-        slice top bot = name ++ "[" ++ show top ++ ":" ++ show bot ++ "]"
+        slice top bot =
+          name ++ "[" ++
+          (if top == bot then show top else show top ++ ":" ++ show bot)
+          ++ "]"
         rst _ 0 = ""
         rst comma nleft =
           (if comma then ", " else "") ++
