@@ -46,8 +46,7 @@ data Expression = ExprAtom Atom
                 | ExprCond (Ranged Expression)
                   (Ranged Expression) (Ranged Expression)
 
-data Statement = Record (Ranged Expression) (Ranged Symbol)
-               | Cover (Ranged Symbol) (Maybe P.CoverList)
+data Statement = Record (Ranged Expression) (Ranged Symbol) (Maybe P.CoverList)
                | Cross [Ranged Symbol]
 
 data Group = Group (SymbolTable ()) (Maybe (Ranged Expression)) [Statement]
@@ -150,15 +149,12 @@ getRecName expr Nothing =
 takeStmt :: PortSyms -> (STBuilder (), [Statement]) -> G.Statement ->
             ErrorsOr (STBuilder (), [Statement])
 
-takeStmt ps (stb, stmts) (G.Record expr as) =
+takeStmt ps (stb, stmts) (G.Record expr as clist) =
   do { (expr', psym) <- liftA2 (,) (readExpression ps expr) (getRecName expr as)
      ; stb' <- stbAdd "record name" stb (rangedRange psym) psym ()
      ; let as' = copyRange psym (stbLastSymbol stb')
-     ; good $ (stb', Record expr' as' : stmts)
+     ; good $ (stb', Record expr' as' clist : stmts)
      }
-
-takeStmt ps (stb, stmts) (G.Cover name clist) =
-  (\ sym -> (stb, Cover sym clist : stmts)) <$> recNameToSym stb name
 
 takeStmt ps (stb, stmts) (G.Cross names) =
   (\ syms -> (stb, Cross syms : stmts)) <$> mapEO (recNameToSym stb) names

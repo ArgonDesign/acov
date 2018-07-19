@@ -39,8 +39,7 @@ data Expression = ExprSym Symbol
                 | ExprCond (Ranged Expression)
                   (Ranged Expression) (Ranged Expression)
 
-data Statement = Record (Ranged Expression) (Ranged Symbol)
-               | Cover (Ranged Symbol) (Maybe P.CoverList)
+data Statement = Record (Ranged Expression) (Ranged Symbol) (Maybe P.CoverList)
                | Cross [Ranged Symbol]
 
 data Group = Group (SymbolTable ()) (Maybe (Ranged Expression)) [Statement]
@@ -127,8 +126,8 @@ tighten :: Ranged S.Expression -> ErrorsOr (Ranged Expression)
 tighten rse = copyRange rse <$> tighten' (rangedRange rse) (rangedData rse)
 
 tightenStatement :: S.Statement -> ErrorsOr Statement
-tightenStatement (S.Record expr name) = (\ e -> Record e name) <$> tighten expr
-tightenStatement (S.Cover sym clist) = good $ Cover sym clist
+tightenStatement (S.Record expr name clist) = (\ e -> Record e name clist) <$>
+                                              tighten expr
 tightenStatement (S.Cross syms) = good $ Cross syms
 
 tightenGroup :: S.Group -> ErrorsOr Group

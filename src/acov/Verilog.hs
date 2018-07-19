@@ -7,7 +7,6 @@ import Data.Array
 import Data.Bits
 import qualified Data.Foldable as Foldable
 import Data.Functor
-import qualified Data.Map.Strict as Map
 import Data.Maybe
 import System.Directory
 import System.FilePath
@@ -20,7 +19,7 @@ import SymbolTable
 
 import qualified Parser as P
 import qualified Expressions as E
-import qualified Records as R
+import qualified Width as W
 
 showBitSel :: E.Slice -> String
 showBitSel (E.Slice a b) =
@@ -133,7 +132,7 @@ showExpression64 w syms rexpr =
   else rest
   where rest = showExpression syms 0 rexpr
 
-writeWire :: Handle -> SymbolTable (Ranged E.Slice) -> (Int, R.Group) ->
+writeWire :: Handle -> SymbolTable (Ranged E.Slice) -> (Int, W.Group) ->
              IO (Maybe (Ranged E.Expression), Int)
 writeWire handle syms (idx, grp) =
   assert (width > 0)
@@ -147,11 +146,11 @@ writeWire handle syms (idx, grp) =
   put " = " >>
   put (snd $ showExpression' syms (E.ExprConcat (head exprs) (tail exprs))) >>
   put ";\n" >>
-  return (R.grpGuard grp, width)
+  return (W.grpGuard grp, width)
   where put = hPutStr handle
         name = "acov_recgroup_" ++ show idx
-        width = sum $ Foldable.toList (R.grpST grp)
-        exprs = map (fst . snd) (Map.toAscList (R.grpRecs grp))
+        width = sum $ map W.recWidth (W.grpRecs grp)
+        exprs = map W.recExpr (W.grpRecs grp)
 
 startAlways :: Handle -> IO ()
 startAlways handle =
@@ -211,25 +210,25 @@ endModule :: Handle -> IO ()
 endModule handle = put "    end\n  end\nendmodule\n\n" >> put fileFooter
   where put = hPutStr handle
 
-modName :: R.Module -> String
-modName = P.symName . rangedData . R.modName
+modName :: W.Module -> String
+modName = P.symName . rangedData . W.modName
 
-writeModule :: R.Module -> Handle -> IO ()
+writeModule :: W.Module -> Handle -> IO ()
 writeModule mod handle =
   do { beginModule handle name syms
-     ; grps <- mapM (writeWire handle syms) (zip [0..] (R.modGroups mod))
+     ; grps <- mapM (writeWire handle syms) (zip [0..] (W.modGroups mod))
      ; startAlways handle
      ; mapM_ (writeGroup handle name syms) (zip [0..] grps)
      ; endModule handle
      }
-  where syms = R.modSyms mod
+  where syms = W.modSyms mod
         name = modName mod
 
-dumpModule :: FilePath -> R.Module -> IO ()
+dumpModule :: FilePath -> W.Module -> IO ()
 dumpModule dirname mod =
   withFile (dirname </> (modName mod ++ "_coverage.v")) WriteMode
   (writeModule mod)
 
-run :: FilePath -> [R.Module] -> IO ()
+run :: FilePath -> [W.Module] -> IO ()
 run dirname mods = createDirectoryIfMissing False dirname >>
                    mapM_ (dumpModule dirname) mods

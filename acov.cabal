@@ -28,7 +28,6 @@ library
                      , Symbols
                      , Expressions
                      , Width
-                     , Records
                      , Frontend
   build-depends:       base >=4.6.0.1 && <4.11
                      , array >= 0.4

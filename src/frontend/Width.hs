@@ -1,5 +1,6 @@
 module Width
   ( run
+  , Record(..)
   , Group(..)
   , Module(..)
   ) where
@@ -26,8 +27,16 @@ import Ranged
   destination size). The statements remain unchanged, but we note the
   width of recorded expressions.
 -}
-data Group =
-  Group (SymbolTable Int) (Maybe (Ranged E.Expression)) [E.Statement]
+data Record = Record { recExpr :: Ranged E.Expression
+                     , recSym :: Ranged Symbol
+                     , recClist :: Maybe P.CoverList
+                     , recWidth :: Int
+                     }
+
+data Group = Group { grpST :: SymbolTable ()
+                   , grpGuard :: Maybe (Ranged E.Expression)
+                   , grpRecs :: [Record]
+                   }
 
 data Module = Module { modName :: Ranged P.Symbol
                      , modSyms :: SymbolTable (Ranged E.Slice)
@@ -119,7 +128,7 @@ selBits re0 mre1 =
   where get = exprAsVInt . rangedData
 
 
-checkSel :: SymbolTable (Ranged E.Slice) -> Ranged Symbol -> 
+checkSel :: SymbolTable (Ranged E.Slice) -> Ranged Symbol ->
             Maybe (Integer, Integer) -> ErrorsOr ()
 checkSel st rsym used =
   case used of
@@ -138,7 +147,7 @@ checkSel st rsym used =
 
 -- TODO: We should support +: and -: so that I can write x[y +: 2] and
 -- have a sensible width.
-selWidth :: SymbolTable (Ranged E.Slice) -> Ranged Symbol -> 
+selWidth :: SymbolTable (Ranged E.Slice) -> Ranged Symbol ->
             Ranged E.Expression -> Maybe (Ranged E.Expression) ->
             ErrorsOr Int
 selWidth st rsym re0 mre1 =
@@ -224,46 +233,44 @@ fitsInBits :: Integer -> Int -> Bool
 fitsInBits n w = assert (w > 0) $ shift (abs n) (- sw) == 0
   where sw = if n >= 0 then w else w - 1
 
-takeStmt :: SymbolTable (Ranged E.Slice) -> Map.Map Symbol Int ->
-            E.Statement -> ErrorsOr (Map.Map Symbol Int)
+takeStmt :: SymbolTable (Ranged E.Slice) -> E.Statement ->
+            ErrorsOr (Maybe Record)
 
-takeStmt st m (E.Record expr rsym) =
+takeStmt st (E.Record expr rsym clist) =
   do { w <- exprWidth st expr
      ; if w > 64 then
          bad1 $ copyRange expr $
          "Record statement with width " ++ show w ++ " (max 64)."
        else good ()
-     ; assert (not $ Map.member sym m) $
-       good $ Map.insert sym w m
+     ; case clist of
+         Nothing ->
+           if w > 16 then
+             bad1 $ copyRange expr
+             "Record has width more than 16 and no cover list."
+           else
+             good ()
+         Just (P.CoverList vals) ->
+           foldEO (\ _ val -> checkCover w val) () vals >> good ()
+     ; good $ Just $ Record expr rsym clist w
      }
   where sym = rangedData rsym
-
-takeStmt st m (E.Cover sym clist) =
-  case clist of
-    Nothing ->
-      if width > 16 then
-        bad1 $ copyRange sym "Symbol has width more than 16 and no cover list."
-      else
-        good m
-    Just (P.CoverList vals) -> foldEO (\ _ val -> checkCover val) () vals >> good m
-
-  where width = fromJust $ Map.lookup (rangedData sym) m
-        checkCover val =
+        checkCover w val =
           let int = toInteger (rangedData val) in
-            if fitsInBits int width then good ()
-            else (bad1 $ copyRange val $
-                  "Cover list has entry of " ++ show int ++
-                  ", but the cover expression has width " ++ show width ++ ".")
-  
-takeStmt _ m (E.Cross syms) = good $ m
+            if fitsInBits int w then good ()
+            else
+              bad1 $ copyRange val $
+              "Cover list has entry of " ++ show int ++
+              ", but the cover expression has width " ++ show w ++ "."
+
+takeStmt _ (E.Cross syms) = good Nothing
 
 readGroup :: SymbolTable (Ranged E.Slice) -> E.Group -> ErrorsOr Group
 readGroup symST (E.Group recST guard stmts) =
-  do { widths <- snd <$> (liftA2 (,)
-                          (checkGuard guard)
-                          (foldEO (takeStmt symST) Map.empty stmts))
+  do { recs <- snd <$> (liftA2 (,)
+                        (checkGuard guard)
+                        (catMaybes <$> (mapEO (takeStmt symST) stmts)))
      ; return $
-       Group (stMapWithSymbol (f widths) recST) guard stmts
+       Group recST guard recs
      }
   where checkGuard Nothing = good ()
         checkGuard (Just g) =
@@ -275,10 +282,7 @@ readGroup symST (E.Group recST guard stmts) =
                else
                  good ()
              }
-        f widths sym () =
-          assert (Map.member sym widths) $
-          fromJust (Map.lookup sym widths)
-        
+
 
 readModule :: E.Module -> ErrorsOr Module
 readModule mod =

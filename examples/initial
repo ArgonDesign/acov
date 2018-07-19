@@ -2,10 +2,8 @@
 module xxx (foo [10:0], bar [19:0], baz [1:0], qux) {
    when (foo [0]) {
      group {
-       record foo;
-       record foo + bar[10:0] as foobar;
-       cover foo {0, 12, 2047};
-       cover foobar {0, 1};
+       record foo cover {0, 12, 2047};
+       record foo + bar[10:0] as foobar cover {0, 1};
        cross foo foobar;
      }
    }

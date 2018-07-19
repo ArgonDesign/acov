@@ -39,18 +39,14 @@ import VInt
     module xxx (foo [10:0], bar [19:0], baz [1:0], qux) {
        when (foo [0]) {
          group {
-           record foo;
-           record foo + bar[10:0] as foobar;
-           cover foo {0, 12, 2047};
-           cover foobar {0, 1};
+           record foo cover {0, 12, 2047};
+           record foo + bar[10:0] as foobar cover {0, 1};
            cross foo foobar;
          }
        }
 
-       group {
-         record qux;
-         cover qux;
-       }
+       record baz;
+       record qux as qxx;
     }
 
   In the parsing stage, we allow group {} and when () {} to nest
@@ -67,8 +63,7 @@ data Module = Module (Ranged Symbol) [Ranged Port] [Ranged Statement]
 
 data Port = Port Symbol (Maybe (Ranged Slice))
 
-data Statement = Record (Ranged Expression) (Maybe (Ranged Symbol))
-               | Cover (Ranged Symbol) (Maybe CoverList)
+data Statement = Record (Ranged Expression) (Maybe (Ranged Symbol)) (Maybe CoverList)
                | Cross [Ranged Symbol]
                | When (Ranged Expression) [Ranged Statement]
                | Group [Ranged Statement]
@@ -311,7 +306,7 @@ expression = do { a <- expression' <?> "expression"
 statement :: Parser (Ranged Statement)
 statement =
   rangedParse $
-  ((group <|> when <|> cross <|> cover <|> record) <?> "statement")
+  ((group <|> when <|> cross <|> record) <?> "statement")
 
 group :: Parser Statement
 group = T.reserved lexer "group" >>
@@ -331,20 +326,13 @@ cross = T.reserved lexer "cross" >>
 coverList :: Parser CoverList
 coverList = CoverList <$> T.braces lexer (commaSep $ rangedParse integer)
 
-cover :: Parser Statement
-cover = do { T.reserved lexer "cover"
-           ; name <- rangedParse sym
-           ; clist <- optionMaybe coverList
-           ; semi
-           ; return $ Cover name clist
-           }
-
 record :: Parser Statement
 record = do { T.reserved lexer "record"
             ; e <- expression
             ; name <- optionMaybe (T.reserved lexer "as" >> rangedParse sym)
+            ; clist <- optionMaybe (T.reserved lexer "cover" >> coverList)
             ; semi
-            ; return $ Record e name }
+            ; return $ Record e name clist }
 
 module' :: Parser Module
 module' = do { T.reserved lexer "module"
