@@ -140,7 +140,6 @@ writeWire handle syms (idx, grp) =
   put (show $ width - 1) >>
   put ":0] " >>
   put name >>
-  put (show idx) >>
   put ";\n  assign " >>
   put name >>
   put " = " >>
