@@ -5,7 +5,9 @@ module Verilog
 import Control.Exception.Base
 import Data.Array
 import Data.Bits
+import qualified Data.Foldable as Foldable
 import Data.Functor
+import qualified Data.Map.Strict as Map
 import Data.Maybe
 import System.Directory
 import System.FilePath
@@ -17,9 +19,8 @@ import VInt
 import SymbolTable
 
 import qualified Parser as P
-import qualified Symbols as S
 import qualified Expressions as E
-import qualified Width as W
+import qualified Records as R
 
 showBitSel :: E.Slice -> String
 showBitSel (E.Slice a b) =
@@ -65,8 +66,8 @@ imports =
           , ""
           ]
 
-beginModule :: Handle -> P.Symbol -> SymbolTable (Ranged E.Slice) -> IO ()
-beginModule handle sym ports =
+beginModule :: Handle -> String -> SymbolTable (Ranged E.Slice) -> IO ()
+beginModule handle name ports =
   assert (not $ null portStrs) $
   print fileHeader >>
   print start >>
@@ -75,7 +76,7 @@ beginModule handle sym ports =
   print ");\n\n" >>
   print imports
   where print = hPutStr handle
-        start = "module " ++ P.symName sym ++ "_coverage ("
+        start = "module " ++ name ++ "_coverage ("
         indent = ",\n" ++ replicate (length start) ' '
         portStrs = showPorts $ stAssocs ports
 
@@ -132,6 +133,26 @@ showExpression64 w syms rexpr =
   else rest
   where rest = showExpression syms 0 rexpr
 
+writeWire :: Handle -> SymbolTable (Ranged E.Slice) -> (Int, R.Group) ->
+             IO (Maybe (Ranged E.Expression), Int)
+writeWire handle syms (idx, grp) =
+  assert (width > 0)
+  put "  wire [" >>
+  put (show $ width - 1) >>
+  put ":0] " >>
+  put name >>
+  put (show idx) >>
+  put ";\n  assign " >>
+  put name >>
+  put " = " >>
+  put (snd $ showExpression' syms (E.ExprConcat (head exprs) (tail exprs))) >>
+  put ";\n" >>
+  return (R.grpGuard grp, width)
+  where put = hPutStr handle
+        name = "acov_recgroup_" ++ show idx
+        width = sum $ Foldable.toList (R.grpST grp)
+        exprs = map (fst . snd) (Map.toAscList (R.grpRecs grp))
+
 startAlways :: Handle -> IO ()
 startAlways handle =
   put "  always @(posedge clk or negedge rst_n) begin\n" >>
@@ -147,57 +168,68 @@ startGuard handle syms (Just guard) =
   hPutStr handle ") begin\n" >>
   return True
 
-writeRecord :: Handle -> P.Symbol -> SymbolTable (Ranged E.Slice) ->
-               SymbolTable Int -> Bool -> E.Record -> IO ()
-writeRecord handle modname syms recs guarded (E.Record expr recsym) =
-   put (if guarded then "  " else "" ++ "      ") >>
-   put "acov_record" >>
-   put " (\"" >>
-   put (P.symName modname) >>
-   put "." >>
-   put (symName recs recsym) >>
-   put "\", " >>
-   put (showExpression64 width syms expr) >>
-   put ");\n"
-   where put = hPutStr handle
-         width = stAt recsym recs
-
 endGuard :: Handle -> Bool -> IO ()
 endGuard _ False = return ()
 endGuard handle True = hPutStr handle "      end\n"
 
+showRecArgs :: Int -> Int -> String
+showRecArgs idx width =
+  assert (width > 0)
+  "{" ++
+  (if pad >= 0 then
+     show pad ++ "'b0, " ++ slice (width - 1) (width + pad - 64)
+   else
+     "") ++
+  rst False (quot width 64) ++ "}"
+  where pad = 63 - rem (width + 63) 64
+        name = "acov_recgroup_" ++ show idx
+        slice top bot = name ++ "[" ++ show top ++ ":" ++ show bot ++ "]"
+        rst _ 0 = ""
+        rst comma nleft =
+          (if comma then ", " else "") ++
+          slice (64 * nleft - 1) (64 * (nleft - 1)) ++
+          rst True (nleft - 1)
 
-writeBlock :: Handle -> P.Symbol -> SymbolTable (Ranged E.Slice) ->
-              SymbolTable Int -> E.Block -> IO ()
-writeBlock handle modname symST recST (E.Block guard recs) =
-  do { guarded <- startGuard handle symST guard
-     ; mapM_ (writeRecord handle modname symST recST guarded) recs
+writeGroup :: Handle -> String -> SymbolTable (Ranged E.Slice) ->
+              (Int, (Maybe (Ranged E.Expression), Int)) -> IO ()
+writeGroup handle modname syms (idx, (guard, width)) =
+  -- TODO: We need a pass to guarantee the assertions hold
+  assert (nwords > 0)
+  assert (nwords <= 4) $
+  do { guarded <- startGuard handle syms guard
+     ; put $ if guarded then "  " else "" ++ "      acov_record"
+     ; put $ show nwords
+     ; put $ " (\"" ++ modname ++ "." ++ show idx ++ ", "
+     ; put $ showRecArgs idx width
+     ; put ");\n"
      ; endGuard handle guarded
      }
+  where put = hPutStr handle
+        nwords = quot (width + 63) 64
 
 endModule :: Handle -> IO ()
 endModule handle = put "    end\n  end\nendmodule\n\n" >> put fileFooter
   where put = hPutStr handle
 
-writeModule :: Handle -> P.Symbol -> W.Module -> IO ()
-writeModule handle name mod =
-  beginModule handle name (W.modSyms mod) >>
-  startAlways handle >>
-  mapM_ (writeBlock handle name (W.modSyms mod) (W.modRecs mod))
-  (W.modBlocks mod) >>
-  endModule handle
+modName :: R.Module -> String
+modName = P.symName . rangedData . R.modName
 
+writeModule :: R.Module -> Handle -> IO ()
+writeModule mod handle =
+  do { beginModule handle name syms
+     ; grps <- mapM (writeWire handle syms) (zip [0..] (R.modGroups mod))
+     ; startAlways handle
+     ; mapM_ (writeGroup handle name syms) (zip [0..] grps)
+     ; endModule handle
+     }
+  where syms = R.modSyms mod
+        name = modName mod
 
-dumpModule :: FilePath -> P.Symbol -> W.Module -> IO ()
-dumpModule dirname name mod =
-  withFile (dirname </> (P.symName name ++ "_coverage.v")) WriteMode
-  (\ h -> writeModule h name mod)
+dumpModule :: FilePath -> R.Module -> IO ()
+dumpModule dirname mod =
+  withFile (dirname </> (modName mod ++ "_coverage.v")) WriteMode
+  (writeModule mod)
 
-dumpModules :: FilePath -> SymbolTable W.Module -> IO ()
-dumpModules dirname mods = stTraverseWithSym_ f mods
-  where f modname mod = dumpModule dirname (rangedData modname) mod
-
-run :: FilePath -> W.Script -> IO ()
-run dirname scr =
-  createDirectoryIfMissing False dirname >>
-  dumpModules dirname (W.scrModules scr)
+run :: FilePath -> [R.Module] -> IO ()
+run dirname mods = createDirectoryIfMissing False dirname >>
+                   mapM_ (dumpModule dirname) mods

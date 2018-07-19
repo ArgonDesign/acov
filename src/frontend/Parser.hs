@@ -1,16 +1,14 @@
 module Parser
   ( Symbol(..)
   , symName
-  , DottedSymbol(..)
-  , Expression(..)
+  , Module(..)
   , Port(..)
+  , Statement(..)
+  , Expression(..)
   , CoverList(..)
   , Slice(..)
   , Atom(..)
-  , Record(..)
-  , Block(..)
   , parseScript
-  , TLStmt(..)
 
   -- Exported just for testing
   , sym
@@ -37,20 +35,26 @@ import VInt
 {-
   A coverage definition looks something like:
 
-     // A module to collect xxx coverage
-     module xxx (foo [10:0], bar [19:0], baz [1:0], qux) {
-        when (foo [0]) {
-          record foo;
-          record foo + bar[10:0] as foobar;
-        }
+    // A module to collect xxx coverage
+    module xxx (foo [10:0], bar [19:0], baz [1:0], qux) {
+       when (foo [0]) {
+         group {
+           record foo;
+           record foo + bar[10:0] as foobar;
+           cover foo {0, 12, 2047};
+           cover foobar {0, 1};
+           cross foo foobar;
+         }
+       }
 
-        record baz;
-        record qux as qxx;
-     }
+       group {
+         record qux;
+         cover qux;
+       }
+    }
 
-     cover xxx.foo {0, 12, 2047};
-     cover xxx.baz;
-     cross xxx.foo xxx.baz;
+  In the parsing stage, we allow group {} and when () {} to nest
+  arbitrarily. We'll tighten stuff up in the next pass.
 
 -}
 newtype Symbol = Symbol String
@@ -59,19 +63,17 @@ newtype Symbol = Symbol String
 symName :: Symbol -> String
 symName (Symbol name) = name
 
-data DottedSymbol = DottedSymbol Symbol Symbol
-
-newtype CoverList = CoverList [Ranged VInt]
+data Module = Module (Ranged Symbol) [Ranged Port] [Ranged Statement]
 
 data Port = Port Symbol (Maybe (Ranged Slice))
 
-data TLStmt = Module (Ranged Symbol) [Ranged Port] [Block]
-            | Cover (Ranged DottedSymbol) (Maybe CoverList)
-            | Cross [Ranged DottedSymbol]
+data Statement = Record (Ranged Expression) (Maybe (Ranged Symbol))
+               | Cover (Ranged Symbol) (Maybe CoverList)
+               | Cross [Ranged Symbol]
+               | When (Ranged Expression) [Ranged Statement]
+               | Group [Ranged Statement]
 
-data Record = Record (Ranged Expression) (Maybe (Ranged Symbol))
-
-data Block = Block (Maybe (Ranged Expression)) [Record]
+newtype CoverList = CoverList [Ranged VInt]
 
 data Atom = AtomSym Symbol
           | AtomInt VInt
@@ -95,6 +97,7 @@ data Expression = ExprAtom Atom
 reservedNames :: [String]
 reservedNames = [ "module"
                 , "when"
+                , "group"
                 , "record"
                 , "as"
                 , "cover"
@@ -305,60 +308,54 @@ expression :: Parser (Ranged Expression)
 expression = do { a <- expression' <?> "expression"
                 ; condTail a <|> return a }
 
-record :: Parser Record
+statement :: Parser (Ranged Statement)
+statement =
+  rangedParse $
+  ((group <|> when <|> cross <|> cover <|> record) <?> "statement")
+
+group :: Parser Statement
+group = T.reserved lexer "group" >>
+        (Group <$> T.braces lexer (many1 statement))
+
+when :: Parser Statement
+when = do { T.reserved lexer "when"
+           ; guard <- T.parens lexer expression
+           ; stmts <- T.braces lexer (many1 statement)
+           ; return $ When guard stmts
+           }
+
+cross :: Parser Statement
+cross = T.reserved lexer "cross" >>
+        (Cross <$> many1 (rangedParse sym)) <* semi
+
+coverList :: Parser CoverList
+coverList = CoverList <$> T.braces lexer (commaSep $ rangedParse integer)
+
+cover :: Parser Statement
+cover = do { T.reserved lexer "cover"
+           ; name <- rangedParse sym
+           ; clist <- optionMaybe coverList
+           ; semi
+           ; return $ Cover name clist
+           }
+
+record :: Parser Statement
 record = do { T.reserved lexer "record"
             ; e <- expression
             ; name <- optionMaybe (T.reserved lexer "as" >> rangedParse sym)
             ; semi
             ; return $ Record e name }
 
-block :: Parser Block
-block = (wrapRec <$> record) <|>
-        do { T.reserved lexer "when"
-           ; guard <- T.parens lexer expression
-           ; recs <- T.braces lexer (many1 record)
-           ; return $ Block (Just guard) recs
-           }
-  where wrapRec r = Block Nothing [r]
-
-{-
-  Parsing top-level statements
--}
-module' :: Parser TLStmt
+module' :: Parser Module
 module' = do { T.reserved lexer "module"
              ; name <- rangedParse sym
-             ; pl <- portList
-             ; blocks <- T.braces lexer (many1 block)
-             ; return $ Module name pl blocks
+             ; ports <- portList
+             ; stmts <- T.braces lexer (many1 statement)
+             ; return $ Module name ports stmts
              }
 
-dottedSymbol :: Parser DottedSymbol
-dottedSymbol = do { mod <- sym
-                  ; T.reservedOp lexer "."
-                  ; var <- sym
-                  ; return $ DottedSymbol mod var
-                  }
-
-coverList :: Parser CoverList
-coverList = CoverList <$> T.braces lexer (commaSep $ rangedParse integer)
-
-cover :: Parser TLStmt
-cover = do { T.reserved lexer "cover"
-           ; name <- rangedParse dottedSymbol
-           ; clist <- optionMaybe coverList
-           ; semi
-           ; return $ Cover name clist
-           }
-
-cross :: Parser TLStmt
-cross = T.reserved lexer "cross" >>
-        (Cross <$> many1 (rangedParse dottedSymbol)) <* semi
-
-tlStmt :: Parser TLStmt
-tlStmt = module' <|> cover <|> cross
-
-script :: Parser [TLStmt]
-script = T.whiteSpace lexer >> many tlStmt <* eof
+script :: Parser [Module]
+script = T.whiteSpace lexer >> many module' <* eof
 
 makeErrors :: ParseError -> Ranged String
 makeErrors pe = Ranged (sourcePosToLCRange (errorPos pe)) $
@@ -366,7 +363,7 @@ makeErrors pe = Ranged (sourcePosToLCRange (errorPos pe)) $
                                   "expecting" "unexpected" "end of input"
                                   (errorMessages pe)
 
-parseScript :: FilePath -> String -> ErrorsOr [TLStmt]
+parseScript :: FilePath -> String -> ErrorsOr [Module]
 parseScript path str =
   case parse script path str of
     Left pe -> bad1 (makeErrors pe)

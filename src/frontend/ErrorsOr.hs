@@ -11,6 +11,7 @@ import Control.Applicative
 import Control.Exception.Base
 import Data.Array
 import qualified Data.Foldable as F
+import Data.Traversable
 import System.Exit
 import System.IO
 

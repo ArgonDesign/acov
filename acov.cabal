@@ -23,10 +23,12 @@ library
                      , VInt
                      , CList
                      , Parser
+                     , Grouping
                      , SymbolTable
                      , Symbols
                      , Expressions
                      , Width
+                     , Records
                      , Frontend
   build-depends:       base >=4.6.0.1 && <4.11
                      , array >= 0.4
@@ -78,3 +80,4 @@ executable acov-report
   hs-source-dirs:      src/acov-report
   default-language:    Haskell2010
   ghc-options:         -fwarn-incomplete-patterns
+  buildable:           False

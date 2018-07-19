@@ -1,24 +1,19 @@
 module Symbols
-  ( Script(..)
-  , TLStmt(..)
-  , Module(..)
-  , Block(..)
-  , Record(..)
+  ( Module(..)
+  , Group(..)
+  , Statement(..)
   , Expression(..)
   , Atom(..)
-  , DottedSymbol(..)
   , run
   )
   where
 
 {-
-  The symbols pass creates a global symbol table for storing module
-  names and a symbol table for each module. Things that were P.Symbol
-  become Symbol (exported from this module), which is fundamentally an
-  integer. Things that were P.DottedSymbol become DottedSymbol (also
-  exported from this module), which is a pair of integers: the first
-  identifies the module and the second identifies the symbol within
-  it.
+  The symbols pass creates symbol tables nested 3 deep. At the top
+  level is a symbol table that maps names to modules. Next, there is a
+  symbol table for each module which maps names to ports. Finally,
+  there is a symbol table for each group which maps names to record
+  statements.
 -}
 
 import Control.Applicative
@@ -34,8 +29,7 @@ import Ranged
 import SymbolTable
 
 import qualified Parser as P
-
-data DottedSymbol = DottedSymbol Symbol Symbol
+import qualified Grouping as G
 
 data Atom = AtomSym Symbol
           | AtomInt VInt
@@ -52,17 +46,24 @@ data Expression = ExprAtom Atom
                 | ExprCond (Ranged Expression)
                   (Ranged Expression) (Ranged Expression)
 
-data Record = Record (Ranged Expression) Symbol
+data Statement = Record (Ranged Expression) (Ranged Symbol)
+               | Cover (Ranged Symbol) (Maybe P.CoverList)
+               | Cross [Ranged Symbol]
 
-data Block = Block (Maybe (Ranged Expression)) [Record]
+data Group = Group (SymbolTable ()) (Maybe (Ranged Expression)) [Statement]
 
-data TLStmt = Cover (Ranged DottedSymbol) (Maybe P.CoverList)
-            | Cross [Ranged DottedSymbol]
+type PortSyms = SymbolTable (Maybe (Ranged P.Slice))
+
+data Module = Module { modName :: Ranged P.Symbol
+                     , modSyms :: PortSyms
+                     , modGrps :: [Group]
+                     }
 
 {-
-  PortSyms is the symbol table for ports of a module.
+  We start with the problem of generating a symbol table for the ports
+  of a module. Because we'll use it a lot, it gets a local type
+  synonym.
 -}
-type PortSyms = SymbolTable (Maybe (Ranged P.Slice))
 
 readPorts :: [Ranged P.Port] -> ErrorsOr PortSyms
 readPorts ports = stbToSymbolTable <$> foldEO takePort stbEmpty ports
@@ -129,106 +130,53 @@ readExpression ps rexpr =
   copyRange rexpr <$> readExpression' ps (rangedRange rexpr) (rangedData rexpr)
 
 {-
-  We want to build up a module instance. This will contain a PortSyms
-  for the input ports, together with a symbol table for record
-  statements and a list of blocks. While building this list of blocks,
-  we'll generate the symbol table for record statements.
+  Now we have expression parsing, we can switch to the problem of
+  making sense of a group of record statements and cover/cross
+  statements.
 -}
-recordName :: P.Record -> ErrorsOr (Ranged P.Symbol)
-recordName (P.Record _ (Just rsym)) = good rsym
-recordName (P.Record expr Nothing) =
+recNameToSym :: STBuilder () -> Ranged P.Symbol -> ErrorsOr (Ranged Symbol)
+recNameToSym stb name =
+  (copyRange name . fst) <$>
+  stbGet "record name" (rangedRange name) (rangedData name) stb
+
+getRecName :: Ranged P.Expression -> Maybe (Ranged P.Symbol) ->
+              ErrorsOr (Ranged P.Symbol)
+getRecName _ (Just name) = good name
+getRecName expr Nothing =
   case rangedData expr of
-    P.ExprAtom (P.AtomSym sym) -> good $ copyRange expr $ sym
-    _ -> (bad1 $ copyRange expr
-           "Cannot guess a name for recorded expression.")
+    P.ExprAtom (P.AtomSym sym) -> good $ copyRange expr sym
+    _ -> bad1 $ copyRange expr "Cannot guess a name for recorded expression."
 
+takeStmt :: PortSyms -> (STBuilder (), [Statement]) -> G.Statement ->
+            ErrorsOr (STBuilder (), [Statement])
 
-takeRecord :: PortSyms -> (STBuilder (), [Record]) -> P.Record ->
-              ErrorsOr (STBuilder (), [Record])
-takeRecord ps (stb, rs) record =
-  do { recname <- recordName record
-     ; (stb', expr') <- liftA2 (,)
-                        (stbAdd "record" stb (rangedRange expr) recname ())
-                        (readExpression ps expr)
-     ; return $ (stb', Record expr' (stbLastSymbol stb') : rs)
-     }
-  where P.Record expr _ = record
-        addRec x = x : rs
-
-
-takeBlock :: PortSyms -> (STBuilder (), [Block]) -> P.Block ->
-             ErrorsOr (STBuilder (), [Block])
-takeBlock ps (stb, blocks) (P.Block mre records) =
-  do { (guard, (stb', records')) <- liftA2 (,)
-                                    (readMaybe mre)
-                                    (foldEO (takeRecord ps) (stb, []) records)
-     ; return $ (stb', Block guard (reverse records') : blocks)
-     }
-  where readMaybe Nothing = return Nothing
-        readMaybe (Just e) = Just <$> readExpression ps e
-
-
-data Module = Module { modSyms :: PortSyms
-                     , modRecs :: SymbolTable ()
-                     , modBlocks :: [Block]
-                     }
-
-readModule :: [Ranged P.Port] -> [P.Block] -> ErrorsOr Module
-readModule ports pblocks =
-  do { ps <- readPorts ports
-     ; (stb, blocks) <- foldEO (takeBlock ps) (stbEmpty, []) pblocks
-     ; return $ Module ps (stbToSymbolTable stb) (reverse blocks)
+takeStmt ps (stb, stmts) (G.Record expr as) =
+  do { (expr', psym) <- liftA2 (,) (readExpression ps expr) (getRecName expr as)
+     ; stb' <- stbAdd "record name" stb (rangedRange psym) psym ()
+     ; let as' = copyRange psym (stbLastSymbol stb')
+     ; good $ (stb', Record expr' as' : stmts)
      }
 
-takeModule :: STBuilder Module ->
-              Ranged P.Symbol -> [Ranged P.Port] -> [P.Block] ->
-              ErrorsOr (STBuilder Module)
-takeModule stb name ports blocks =
-  readModule ports blocks >>= stbAdd "module" stb (rangedRange name) name
+takeStmt ps (stb, stmts) (G.Cover name clist) =
+  (\ sym -> (stb, Cover sym clist : stmts)) <$> recNameToSym stb name
 
-readDottedSymbol :: STBuilder Module -> Ranged P.DottedSymbol ->
-                    ErrorsOr (Ranged DottedSymbol)
-readDottedSymbol stb rds =
-  do { (sym, mod) <- stbGet "module" rng mname stb
-     ; record <- fst <$> stGet "record" rng sname (modRecs mod)
-     ; return $ copyRange rds (DottedSymbol sym record)
-     }
-   where P.DottedSymbol mname sname = rangedData rds
-         rng = rangedRange rds
+takeStmt ps (stb, stmts) (G.Cross names) =
+  (\ syms -> (stb, Cross syms : stmts)) <$> mapEO (recNameToSym stb) names
 
-readCover :: STBuilder Module -> Ranged P.DottedSymbol -> Maybe P.CoverList ->
-             ErrorsOr TLStmt
-readCover stb rpds coverlist =
-  do { rds <- readDottedSymbol stb rpds
-     ; return $ Cover rds coverlist
+readGroup :: PortSyms -> G.Group -> ErrorsOr Group
+readGroup ps (G.Group guard stmts) =
+  do { (guard', (stb, stmts')) <- liftA2 (,)
+                                  (eoMaybe (readExpression ps <$> guard))
+                                  (foldEO (takeStmt ps) (stbEmpty, []) stmts)
+     ; return $ Group (stbToSymbolTable stb) guard' (reverse stmts')
      }
 
-readCross :: STBuilder Module -> [Ranged P.DottedSymbol] -> ErrorsOr TLStmt
-readCross stb lst = Cross <$> mapEO (readDottedSymbol stb) lst
-
-takeTLStmt :: (STBuilder Module, [TLStmt]) -> P.TLStmt ->
-              ErrorsOr (STBuilder Module, [TLStmt])
-
-takeTLStmt (stb, stmts) (P.Module name ports blocks) =
-  do { stb' <- takeModule stb name ports blocks
-     ; return (stb', stmts)
+readModule :: G.Module -> ErrorsOr Module
+readModule (G.Module name ports groups) =
+  do { ports' <- readPorts ports
+     ; groups' <- mapEO (readGroup ports') groups
+     ; good $ Module name ports' groups'
      }
 
-takeTLStmt (stb, stmts) (P.Cover name clist) =
-  do { stmt <- readCover stb name clist
-     ; return (stb, stmt : stmts)
-     }
-
-takeTLStmt (stb, stmts) (P.Cross names) =
-  do { stmt <- readCross stb names
-     ; return (stb, stmt : stmts)
-     }
-
-data Script = Script { scrMods :: SymbolTable Module
-                     , scrStmts :: [TLStmt]
-                     }
-
-run :: [P.TLStmt] -> ErrorsOr Script
-run pstmts = do { (stb, stmts) <- foldEO takeTLStmt (stbEmpty, []) pstmts
-                ; return $ Script (stbToSymbolTable stb) (reverse stmts)
-                }
+run :: [G.Module] -> ErrorsOr [Module]
+run = mapEO readModule

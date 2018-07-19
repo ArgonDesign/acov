@@ -17,9 +17,12 @@ module SymbolTable
   , stbToSymbolTable
   ) where
 
+import Control.Applicative
 import qualified Data.Map.Strict as Map
 import Data.Array.IArray
-import Data.Foldable
+import qualified Data.Foldable as Foldable
+import Data.Functor
+import Data.Traversable
 
 import CList
 import ErrorsOr
@@ -48,9 +51,9 @@ instance Functor SymbolTable where
   fmap f st = SymbolTable (stMap st) (f' <$> (stData st))
     where f' (sym, a) = (sym, f a)
 
-instance Foldable SymbolTable where
-  foldMap f st = foldMap (f . snd) (stData st)
-  foldr f b st = foldr f' b (stData st)
+instance Foldable.Foldable SymbolTable where
+  foldMap f st = Foldable.foldMap (f . snd) (stData st)
+  foldr f b st = Foldable.foldr f' b (stData st)
     where f' (_, a) b = f a b
 
 instance Traversable SymbolTable where
@@ -83,7 +86,7 @@ stTraverseWithSym f st = SymbolTable (stMap st) <$> traverse f' (stData st)
 
 stTraverseWithSym_ :: Applicative t =>
                       (Ranged P.Symbol -> a -> t b) -> SymbolTable a -> t ()
-stTraverseWithSym_ f st = traverse_ f' (stData st)
+stTraverseWithSym_ f st = Foldable.traverse_ f' (stData st)
   where f' (sym, a) = f sym a
 
 stMapWithSymbol :: (Symbol -> a -> b) -> SymbolTable a -> SymbolTable b

@@ -1,13 +1,14 @@
 module Expressions
-  ( run
-  , Expression(..)
-  , Record(..)
-  , Block(..)
-  , Module(..)
-  , Script(..)
-  , Slice(..)
-  , sliceWidth
-  ) where
+--  ( run
+--  , Expression(..)
+--  , Record(..)
+--  , Block(..)
+--  , Module(..)
+--  , Script(..)
+--  , Slice(..)
+--  , sliceWidth
+--  )
+where
 
 import Control.Applicative
 import Data.Maybe
@@ -38,23 +39,23 @@ data Expression = ExprSym Symbol
                 | ExprCond (Ranged Expression)
                   (Ranged Expression) (Ranged Expression)
 
-data Record = Record (Ranged Expression) Symbol
+data Statement = Record (Ranged Expression) (Ranged Symbol)
+               | Cover (Ranged Symbol) (Maybe P.CoverList)
+               | Cross [Ranged Symbol]
 
-data Block = Block (Maybe (Ranged Expression)) [Record]
-
-data Module = Module { modSyms :: SymbolTable (Ranged Slice)
-                     , modRecs :: SymbolTable ()
-                     , modBlocks :: [Block]
-                     }
+data Group = Group (SymbolTable ()) (Maybe (Ranged Expression)) [Statement]
 
 data Slice = Slice Int Int
 
+type PortSyms = SymbolTable (Ranged Slice)
+
+data Module = Module { modName :: Ranged P.Symbol
+                     , modSyms :: PortSyms
+                     , modGrps :: [Group]
+                     }
+
 sliceWidth :: Slice -> Int
 sliceWidth (Slice a b) = 1 + (if a < b then b - a else a - b)
-
-data Script = Script { scrMods :: SymbolTable Module
-                     , scrStmts :: [S.TLStmt]
-                     }
 
 tightenAtom :: S.Atom -> Expression
 tightenAtom (S.AtomSym sym) = ExprSym sym
@@ -125,12 +126,15 @@ tighten' _ (S.ExprCond se0 se1 se2) = tightenCond se0 se1 se2
 tighten :: Ranged S.Expression -> ErrorsOr (Ranged Expression)
 tighten rse = copyRange rse <$> tighten' (rangedRange rse) (rangedData rse)
 
-tightenRecord :: S.Record -> ErrorsOr Record
-tightenRecord (S.Record expr name) = (\ e -> Record e name) <$> tighten expr
+tightenStatement :: S.Statement -> ErrorsOr Statement
+tightenStatement (S.Record expr name) = (\ e -> Record e name) <$> tighten expr
+tightenStatement (S.Cover sym clist) = good $ Cover sym clist
+tightenStatement (S.Cross syms) = good $ Cross syms
 
-tightenBlock :: S.Block -> ErrorsOr Block
-tightenBlock (S.Block guard recs) =
-  liftA2 Block (eoMaybe (tighten <$> guard)) (mapEO tightenRecord recs)
+tightenGroup :: S.Group -> ErrorsOr Group
+tightenGroup (S.Group st guard stmts) =
+  liftA2 (Group st)
+  (eoMaybe (tighten <$> guard)) (mapEO tightenStatement stmts)
 
 tightenBitSel :: P.Symbol -> LCRange -> VInt -> ErrorsOr Integer
 tightenBitSel psym rng int =
@@ -166,13 +170,11 @@ tightenPortSyms st = eaToEO $ stTraverseWithSym f st
 
 tightenModule :: S.Module -> ErrorsOr Module
 tightenModule mod =
-  do { (psyms, blocks) <- liftA2 (,)
-                          (tightenPortSyms (S.modSyms mod))
-                          (mapEO tightenBlock (S.modBlocks mod))
-     ; good $ Module psyms (S.modRecs mod) blocks
+  do { (psyms, grps) <- liftA2 (,)
+                        (tightenPortSyms (S.modSyms mod))
+                        (mapEO tightenGroup (S.modGrps mod))
+     ; good $ Module (S.modName mod) psyms grps
      }
 
-run :: S.Script -> ErrorsOr Script
-run script =
-  (\ mods -> Script mods (S.scrStmts script)) <$>
-  (traverseEO tightenModule (S.scrMods script))
+run :: [S.Module] -> ErrorsOr [Module]
+run = mapEO tightenModule

@@ -1,6 +1,6 @@
 module Width
   ( run
-  , Script(..)
+  , Group(..)
   , Module(..)
   ) where
 
@@ -23,16 +23,15 @@ import Ranged
 {-
   The width pass does width checking (working with a Verilog-like
   semantics but where we don't do magic width promotion based on the
-  destination size). The statements unchanged, but we note the width
-  of recorded expressions (this is the Int in the type of modRecs)
+  destination size). The statements remain unchanged, but we note the
+  width of recorded expressions.
 -}
-data Module = Module { modSyms :: SymbolTable (Ranged E.Slice)
-                     , modBlocks :: [E.Block]
-                     , modRecs :: SymbolTable Int
-                     }
+data Group =
+  Group (SymbolTable Int) (Maybe (Ranged E.Expression)) [E.Statement]
 
-data Script = Script { scrModules :: SymbolTable Module
-                     , scrStmts :: [S.TLStmt]
+data Module = Module { modName :: Ranged P.Symbol
+                     , modSyms :: SymbolTable (Ranged E.Slice)
+                     , modGroups :: [Group]
                      }
 
 symBits :: SymbolTable (Ranged E.Slice) -> Symbol -> (Int, Int)
@@ -221,23 +220,54 @@ exprWidth' st _ (E.ExprUnOp uo e) = unOpWidth st uo e
 exprWidth' st _ (E.ExprBinOp bo e0 e1) = binOpWidth st bo e0 e1
 exprWidth' st _ (E.ExprCond e0 e1 e2) = condWidth st e0 e1 e2
 
-takeRecord :: SymbolTable (Ranged E.Slice) -> Map.Map Symbol Int ->
-              E.Record -> ErrorsOr (Map.Map Symbol Int)
-takeRecord st m (E.Record expr sym) =
+fitsInBits :: Integer -> Int -> Bool
+fitsInBits n w = assert (w > 0) $ shift (abs n) (- sw) == 0
+  where sw = if n >= 0 then w else w - 1
+
+takeStmt :: SymbolTable (Ranged E.Slice) -> Map.Map Symbol Int ->
+            E.Statement -> ErrorsOr (Map.Map Symbol Int)
+
+takeStmt st m (E.Record expr rsym) =
   do { w <- exprWidth st expr
+     ; if w > 64 then
+         bad1 $ copyRange expr $
+         "Record statement with width " ++ show w ++ " (max 64)."
+       else good ()
      ; assert (not $ Map.member sym m) $
        good $ Map.insert sym w m
      }
+  where sym = rangedData rsym
 
-takeBlock :: SymbolTable (Ranged E.Slice) -> Map.Map Symbol Int ->
-             E.Block -> ErrorsOr (Map.Map Symbol Int)
-takeBlock st m (E.Block guard recs) =
-  do { (_, m') <- liftA2 (,) (checkGuard guard) (foldEO (takeRecord st) m recs)
-     ; good m'
+takeStmt st m (E.Cover sym clist) =
+  case clist of
+    Nothing ->
+      if width > 16 then
+        bad1 $ copyRange sym "Symbol has width more than 16 and no cover list."
+      else
+        good m
+    Just (P.CoverList vals) -> foldEO (\ _ val -> checkCover val) () vals >> good m
+
+  where width = fromJust $ Map.lookup (rangedData sym) m
+        checkCover val =
+          let int = toInteger (rangedData val) in
+            if fitsInBits int width then good ()
+            else (bad1 $ copyRange val $
+                  "Cover list has entry of " ++ show int ++
+                  ", but the cover expression has width " ++ show width ++ ".")
+  
+takeStmt _ m (E.Cross syms) = good $ m
+
+readGroup :: SymbolTable (Ranged E.Slice) -> E.Group -> ErrorsOr Group
+readGroup symST (E.Group recST guard stmts) =
+  do { widths <- snd <$> (liftA2 (,)
+                          (checkGuard guard)
+                          (foldEO (takeStmt symST) Map.empty stmts))
+     ; return $
+       Group (stMapWithSymbol (f widths) recST) guard stmts
      }
   where checkGuard Nothing = good ()
         checkGuard (Just g) =
-          do { gw <- exprWidth st g
+          do { gw <- exprWidth symST g
              ; if gw /= 1 then
                  bad1 $ copyRange g $
                  ("Block is guarded by expression with width " ++
@@ -245,60 +275,15 @@ takeBlock st m (E.Block guard recs) =
                else
                  good ()
              }
-
-readModule :: E.Module -> ErrorsOr Module
-readModule mod =
-  Module (E.modSyms mod) blocks <$>
-  do { widths <- foldEO (takeBlock (E.modSyms mod)) Map.empty blocks
-     ; return $ stMapWithSymbol (f widths) (E.modRecs mod)
-     }
-  where blocks = E.modBlocks mod
         f widths sym () =
           assert (Map.member sym widths) $
           fromJust (Map.lookup sym widths)
+        
 
-readModules :: SymbolTable E.Module -> ErrorsOr (SymbolTable Module)
-readModules = traverseEO readModule
+readModule :: E.Module -> ErrorsOr Module
+readModule mod =
+  Module (E.modName mod) (E.modSyms mod) <$>
+  mapEO (readGroup (E.modSyms mod)) (E.modGrps mod)
 
-fitsInBits :: Integer -> Int -> Bool
-fitsInBits n w = assert (w > 0) $ shift (abs n) (- sw) == 0
-  where sw = if n >= 0 then w else w - 1
-
-checkCover1 :: Int -> Ranged VInt -> ErrorsOr ()
-checkCover1 w rint =
-  if fitsInBits asInt w then good ()
-  else bad1 $ copyRange rint $
-       "Cover list has entry of " ++ show asInt ++
-       ", but the cover expression has width " ++ show w ++ "."
-  where asInt = toInteger (rangedData rint)
-
-checkCover' :: LCRange -> Int -> Maybe P.CoverList -> ErrorsOr ()
-checkCover' rng w Nothing =
-  if w > 16 then
-    bad1 $ Ranged rng "Symbol has width more than 16 and no cover list."
-  else
-    good ()
-
-checkCover' _ w (Just (P.CoverList vints)) =
-  mapEO (checkCover1 w) vints >> good ()
-
-checkCover :: SymbolTable Module ->
-              Ranged S.DottedSymbol -> Maybe P.CoverList ->
-              ErrorsOr ()
-checkCover mods dsym clist = checkCover' (rangedRange dsym) width clist
-  where S.DottedSymbol msym vsym = rangedData dsym
-        width = stAt vsym (modRecs (stAt msym mods))
-
-checkTLStmt :: SymbolTable Module -> S.TLStmt -> ErrorsOr ()
-checkTLStmt mods (S.Cover dsym cov) = checkCover mods dsym cov
-checkTLStmt _ (S.Cross _) = good ()
-
-checkTLStmts :: SymbolTable Module -> [S.TLStmt] -> ErrorsOr ()
-checkTLStmts mods = foldEO (\ _ -> checkTLStmt mods) ()
-
-run :: E.Script -> ErrorsOr Script
-run script = do { mods <- readModules (E.scrMods script)
-                ; checkTLStmts mods stmts
-                ; good $ Script mods stmts
-                }
-  where stmts = E.scrStmts script
+run :: [E.Module] -> ErrorsOr [Module]
+run = mapEO readModule

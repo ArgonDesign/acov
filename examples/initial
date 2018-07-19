@@ -1,14 +1,15 @@
 // A module to collect xxx coverage
 module xxx (foo [10:0], bar [19:0], baz [1:0], qux) {
    when (foo [0]) {
-     record foo;
-     record foo + bar[10:0] as foobar;
+     group {
+       record foo;
+       record foo + bar[10:0] as foobar;
+       cover foo {0, 12, 2047};
+       cover foobar {0, 1};
+       cross foo foobar;
+     }
    }
 
    record baz;
    record qux as qxx;
 }
-
-cover xxx.foo {0, 12, 2047};
-cover xxx.baz;
-cross xxx.foo xxx.baz;

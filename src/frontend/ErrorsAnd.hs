@@ -2,6 +2,8 @@ module ErrorsAnd
   ( ErrorsAnd(..)
   ) where
 
+import Control.Applicative
+
 import Ranged
 
 data ErrorsAnd a = ErrorsAnd [Ranged String] a
