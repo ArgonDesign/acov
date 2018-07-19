@@ -162,8 +162,8 @@ startGuard :: Handle -> SymbolTable (Ranged E.Slice) ->
               Maybe (Ranged E.Expression) -> IO Bool
 startGuard _ _ Nothing = return False
 startGuard handle syms (Just guard) =
-  hPutStr handle "if (" >>
-  hPutStr handle (showExpression syms 100 guard) >>
+  hPutStr handle "      if (" >>
+  hPutStr handle (showExpression syms 0 guard) >>
   hPutStr handle ") begin\n" >>
   return True
 
@@ -196,9 +196,9 @@ writeGroup handle modname syms (idx, (guard, width)) =
   assert (nwords > 0)
   assert (nwords <= 4) $
   do { guarded <- startGuard handle syms guard
-     ; put $ if guarded then "  " else "" ++ "      acov_record"
+     ; put $ (if guarded then "  " else "") ++ "      acov_record"
      ; put $ show nwords
-     ; put $ " (\"" ++ modname ++ "." ++ show idx ++ ", "
+     ; put $ " (\"" ++ modname ++ "." ++ show idx ++ "\", "
      ; put $ showRecArgs idx width
      ; put ");\n"
      ; endGuard handle guarded
