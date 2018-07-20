@@ -1,14 +1,12 @@
 module Expressions
---  ( run
---  , Expression(..)
---  , Record(..)
---  , Block(..)
---  , Module(..)
---  , Script(..)
---  , Slice(..)
---  , sliceWidth
---  )
-where
+  ( run
+  , Expression(..)
+  , Record(..)
+  , Group(..)
+  , Module(..)
+  , Slice(..)
+  , sliceWidth
+  ) where
 
 import Control.Applicative
 import Data.Maybe
@@ -39,10 +37,9 @@ data Expression = ExprSym Symbol
                 | ExprCond (Ranged Expression)
                   (Ranged Expression) (Ranged Expression)
 
-data Statement = Record (Ranged Expression) (Ranged Symbol) (Maybe P.CoverList)
-               | Cross [Ranged Symbol]
+data Record = Record (Ranged Expression) (Ranged Symbol) (Maybe P.CoverList)
 
-data Group = Group (SymbolTable ()) (Maybe (Ranged Expression)) [Statement]
+data Group = Group (SymbolTable ()) (Maybe (Ranged Expression)) [Record]
 
 data Slice = Slice Int Int
 
@@ -125,15 +122,13 @@ tighten' _ (S.ExprCond se0 se1 se2) = tightenCond se0 se1 se2
 tighten :: Ranged S.Expression -> ErrorsOr (Ranged Expression)
 tighten rse = copyRange rse <$> tighten' (rangedRange rse) (rangedData rse)
 
-tightenStatement :: S.Statement -> ErrorsOr Statement
-tightenStatement (S.Record expr name clist) = (\ e -> Record e name clist) <$>
-                                              tighten expr
-tightenStatement (S.Cross syms) = good $ Cross syms
+tightenRecord :: S.Record -> ErrorsOr Record
+tightenRecord (S.Record expr name clist) =
+  (\ e -> Record e name clist) <$> tighten expr
 
 tightenGroup :: S.Group -> ErrorsOr Group
-tightenGroup (S.Group st guard stmts) =
-  liftA2 (Group st)
-  (eoMaybe (tighten <$> guard)) (mapEO tightenStatement stmts)
+tightenGroup (S.Group st guard recs) =
+  liftA2 (Group st) (eoMaybe (tighten <$> guard)) (mapEO tightenRecord recs)
 
 tightenBitSel :: P.Symbol -> LCRange -> VInt -> ErrorsOr Integer
 tightenBitSel psym rng int =

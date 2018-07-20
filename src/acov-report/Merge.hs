@@ -63,7 +63,6 @@ mergeScope mod scope sd =
 data GroupCoverage = GroupCoverage { gcVals :: Set.Set Integer
                                    , gcST :: SymbolTable ()
                                    , gcRecs :: [W.Record]
-                                   , gcCrosses :: [W.Cross]
                                    }
 
 checkWidth :: Int -> Integer -> Either String ()
@@ -81,6 +80,6 @@ checkWidths recs vals = traverse_ (checkWidth w) vals
 mergeGrp :: (W.Group, Set.Set Integer) -> Either String GroupCoverage
 mergeGrp (grp, vals) =
   do { checkWidths recs vals
-     ; return $ GroupCoverage vals (W.grpST grp) recs (W.grpCrosses grp)
+     ; return $ GroupCoverage vals (W.grpST grp) recs
      }
   where recs = W.grpRecs grp

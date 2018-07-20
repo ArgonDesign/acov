@@ -1,7 +1,7 @@
 module Symbols
   ( Module(..)
   , Group(..)
-  , Statement(..)
+  , Record(..)
   , Expression(..)
   , Atom(..)
   , run
@@ -46,10 +46,9 @@ data Expression = ExprAtom Atom
                 | ExprCond (Ranged Expression)
                   (Ranged Expression) (Ranged Expression)
 
-data Statement = Record (Ranged Expression) (Ranged Symbol) (Maybe P.CoverList)
-               | Cross [Ranged Symbol]
+data Record = Record (Ranged Expression) (Ranged Symbol) (Maybe P.CoverList)
 
-data Group = Group (SymbolTable ()) (Maybe (Ranged Expression)) [Statement]
+data Group = Group (SymbolTable ()) (Maybe (Ranged Expression)) [Record]
 
 type PortSyms = SymbolTable (Maybe (Ranged P.Slice))
 
@@ -146,8 +145,8 @@ getRecName expr Nothing =
     P.ExprAtom (P.AtomSym sym) -> good $ copyRange expr sym
     _ -> bad1 $ copyRange expr "Cannot guess a name for recorded expression."
 
-takeStmt :: PortSyms -> (STBuilder (), [Statement]) -> G.Statement ->
-            ErrorsOr (STBuilder (), [Statement])
+takeStmt :: PortSyms -> (STBuilder (), [Record]) -> G.Record ->
+            ErrorsOr (STBuilder (), [Record])
 
 takeStmt ps (stb, stmts) (G.Record expr as clist) =
   do { (expr', psym) <- liftA2 (,) (readExpression ps expr) (getRecName expr as)
@@ -155,9 +154,6 @@ takeStmt ps (stb, stmts) (G.Record expr as clist) =
      ; let as' = copyRange psym (stbLastSymbol stb')
      ; good $ (stb', Record expr' as' clist : stmts)
      }
-
-takeStmt ps (stb, stmts) (G.Cross names) =
-  (\ syms -> (stb, Cross syms : stmts)) <$> mapEO (recNameToSym stb) names
 
 readGroup :: PortSyms -> G.Group -> ErrorsOr Group
 readGroup ps (G.Group guard stmts) =

@@ -41,7 +41,6 @@ import VInt
          group {
            record foo cover {0, 12, 2047};
            record foo + bar[10:0] as foobar cover {0, 1};
-           cross foo foobar;
          }
        }
 
@@ -64,7 +63,6 @@ data Module = Module (Ranged Symbol) [Ranged Port] [Ranged Statement]
 data Port = Port Symbol (Maybe (Ranged Slice))
 
 data Statement = Record (Ranged Expression) (Maybe (Ranged Symbol)) (Maybe CoverList)
-               | Cross [Ranged Symbol]
                | When (Ranged Expression) [Ranged Statement]
                | Group [Ranged Statement]
 
@@ -96,7 +94,6 @@ reservedNames = [ "module"
                 , "record"
                 , "as"
                 , "cover"
-                , "cross"
                 ]
 
 reservedOpNames = [ ";" , "," , ":" , "=" , "."
@@ -306,7 +303,7 @@ expression = do { a <- expression' <?> "expression"
 statement :: Parser (Ranged Statement)
 statement =
   rangedParse $
-  ((group <|> when <|> cross <|> record) <?> "statement")
+  ((group <|> when <|> record) <?> "statement")
 
 group :: Parser Statement
 group = T.reserved lexer "group" >>
@@ -318,10 +315,6 @@ when = do { T.reserved lexer "when"
            ; stmts <- T.braces lexer (many1 statement)
            ; return $ When guard stmts
            }
-
-cross :: Parser Statement
-cross = T.reserved lexer "cross" >>
-        (Cross <$> many1 (rangedParse sym)) <* semi
 
 coverList :: Parser CoverList
 coverList = CoverList <$> T.braces lexer (commaSep $ rangedParse integer)
