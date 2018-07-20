@@ -28,7 +28,7 @@ import Ranged
 -}
 data Record = Record { recExpr :: Ranged E.Expression
                      , recSym :: Ranged Symbol
-                     , recClist :: Maybe P.CoverList
+                     , recClist :: [Integer]
                      , recWidth :: Int
                      }
 
@@ -232,6 +232,24 @@ fitsInBits :: Integer -> Int -> Bool
 fitsInBits n w = assert (w > 0) $ shift (abs n) (- sw) == 0
   where sw = if n >= 0 then w else w - 1
 
+makeCList :: LCRange -> Int -> Maybe P.CoverList -> ErrorsOr [Integer]
+makeCList rng w Nothing =
+  if w > 16 then
+    bad1 $ Ranged rng
+    "Record has width more than 16 and no cover list."
+  else
+    return [0..max]
+  where max = (shiftL (1 :: Integer) w) - 1
+
+makeCList _ w (Just (P.CoverList vals)) = mapEO f vals
+  where f v =
+          let int = toInteger $ rangedData v in
+            if fitsInBits int w then good int
+            else
+              bad1 $ copyRange v $
+              "Cover list has entry of " ++ show int ++
+              ", but the cover expression has width " ++ show w ++ "."
+
 takeRec :: SymbolTable (Ranged E.Slice) -> E.Record -> ErrorsOr Record
 
 takeRec st (E.Record expr rsym clist) =
@@ -240,25 +258,9 @@ takeRec st (E.Record expr rsym clist) =
          bad1 $ copyRange expr $
          "Record statement with width " ++ show w ++ " (max 64)."
        else good ()
-     ; case clist of
-         Nothing ->
-           if w > 16 then
-             bad1 $ copyRange expr
-             "Record has width more than 16 and no cover list."
-           else
-             good ()
-         Just (P.CoverList vals) ->
-           foldEO (\ _ val -> checkCover w val) () vals >> good ()
-     ; good $ Record expr rsym clist w
+     ; clist' <- makeCList (rangedRange expr) w clist
+     ; good $ Record expr rsym clist' w
      }
-  where sym = rangedData rsym
-        checkCover w val =
-          let int = toInteger (rangedData val) in
-            if fitsInBits int w then good ()
-            else
-              bad1 $ copyRange val $
-              "Cover list has entry of " ++ show int ++
-              ", but the cover expression has width " ++ show w ++ "."
 
 readGroup :: SymbolTable (Ranged E.Slice) -> E.Group -> ErrorsOr Group
 readGroup symST (E.Group recST guard recs) =
