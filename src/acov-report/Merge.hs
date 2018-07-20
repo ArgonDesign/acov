@@ -18,8 +18,12 @@ import qualified Width as W
 import Control.Monad
 
 import Data.Array
+import Data.Bits
+import Data.Foldable
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
+
+import Numeric (showHex)
 
 {-
   This module is in charge of merging a raw coverage report with a
@@ -62,6 +66,21 @@ data GroupCoverage = GroupCoverage { gcVals :: Set.Set Integer
                                    , gcCrosses :: [W.Cross]
                                    }
 
+checkWidth :: Int -> Integer -> Either String ()
+checkWidth w n =
+  if shiftR n w /= 0 then
+    Left ("The value " ++ (showHex n "") ++ " is more than " ++
+          show w ++ " bits wide. Are your acov.log files out of date?")
+  else
+    Right ()
+
+checkWidths :: [W.Record] -> Set.Set Integer -> Either String ()
+checkWidths recs vals = traverse_ (checkWidth w) vals
+  where w = sum (map W.recWidth recs)
+
 mergeGrp :: (W.Group, Set.Set Integer) -> Either String GroupCoverage
 mergeGrp (grp, vals) =
-  return $ GroupCoverage vals (W.grpST grp) (W.grpRecs grp) (W.grpCrosses grp)
+  do { checkWidths recs vals
+     ; return $ GroupCoverage vals (W.grpST grp) recs (W.grpCrosses grp)
+     }
+  where recs = W.grpRecs grp
