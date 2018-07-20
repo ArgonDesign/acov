@@ -1,8 +1,8 @@
 module Merge
-  ( Coverage
-  , ModCoverage
-  , ScopeCoverage
-  , GroupCoverage
+  ( Coverage(..)
+  , ModCoverage(..)
+  , ScopeCoverage(..)
+  , GroupCoverage(..)
   , mergeCoverage
   ) where
 

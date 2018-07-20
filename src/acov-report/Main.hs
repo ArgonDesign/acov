@@ -3,11 +3,14 @@ module Main where
 import Control.Monad
 import Data.Monoid ((<>))
 import Options.Applicative
+import System.Directory (createDirectoryIfMissing)
+import System.FilePath ((</>))
 import System.Exit
 import System.IO
 
 import qualified Raw
 import qualified Merge
+import Report
 
 import qualified Frontend
 
@@ -47,6 +50,9 @@ run :: Args -> IO ()
 run args = do { mods <- Frontend.run (input args)
               ; cov <- readCoverage
               ; mcov <- reportErr (Merge.mergeCoverage mods cov)
+              ; createDirectoryIfMissing False (odir args)
+              ; withFile (odir args </> "index.html") WriteMode
+                (\ h -> report h mcov)
               ; exitSuccess
               }
 
