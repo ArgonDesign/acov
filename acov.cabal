@@ -67,9 +67,10 @@ executable acov
 
 executable acov-report
   main-is:             Main.hs
-  other-modules:       Report
-                     , Coverage
+  other-modules:       Raw
+                     , Merge
   build-depends:       base >=4.6.0.1 && <4.11
+                     , array >= 0.4
                      , containers >= 0.5
                      , directory >= 1.2
                      , filepath >= 1.3
@@ -79,4 +80,3 @@ executable acov-report
   hs-source-dirs:      src/acov-report
   default-language:    Haskell2010
   ghc-options:         -fwarn-incomplete-patterns
-  buildable:           False

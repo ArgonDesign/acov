@@ -7,7 +7,6 @@ module Width
 
 import Control.Applicative
 import Control.Exception.Base
-import Data.Array
 import Data.Bits
 import qualified Data.Map.Strict as Map
 import Data.Maybe

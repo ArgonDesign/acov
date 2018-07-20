@@ -1,27 +1,18 @@
 module Main where
 
+import Control.Monad
 import Data.Monoid ((<>))
 import Options.Applicative
 import System.Exit
-import System.Directory
-import System.FilePath
 import System.IO
-import qualified Data.Map.Strict as Map
 
-import Report
+import qualified Raw
+import qualified Merge
 
-import Coverage
 import qualified Frontend
-import qualified Symbols as S
-import qualified Width as W
-import qualified Parser as P
-
-import Ranged
-import SymbolTable
 
 data Args = Args
   { input :: FilePath
-  , cover :: FilePath
   , odir  :: FilePath
   }
 
@@ -29,8 +20,6 @@ mainArgs :: Parser Args
 mainArgs = Args
            <$> argument str ( metavar "input" <>
                               help "Input file" )
-           <*> argument str ( metavar "acov.log" <>
-                              help "Coverage log" )
            <*> argument str ( metavar "odir" <>
                               help "Output directory" )
 
@@ -40,54 +29,25 @@ mainInfo = info (mainArgs <**> helper)
              progDesc "Report functional coverage" <>
              header "acov-report - functional coverage reporter" )
 
-getCoverage :: FilePath -> IO Coverage
-getCoverage path =
-  do { cover' <- readCoverage emptyCoverage path
-     ; case cover' of
-         Left err -> hPutStr stderr (err ++ "\n") >> exitFailure
-         Right c -> return c
+reportErr :: Either String a -> IO a
+reportErr (Left err) = hPutStr stderr ("Error: " ++ err ++ "\n") >>
+                       exitFailure
+reportErr (Right a) = return a
+
+readCoverage :: IO Raw.Coverage
+readCoverage =
+  do { paths <- words <$> getContents
+     ; if null paths then hPutStr stderr "Warning: No coverage files.\n"
+       else return ()
+     ; foldM f Raw.emptyCoverage paths
      }
-
-data Reports = Reports { covers :: Map.Map (String, String) CoverReport }
-
-procStmt :: PerModCoverage -> SymbolTable W.Module ->
-            S.TLStmt -> Reports -> Reports
-procStmt pmc mods (S.Cover rdsym clist) rpts =
-  rpts { covers = Map.insert (modName, recName) cover (covers rpts) }
-  where cover = mkCoverReport pmc modName recName recWidth clist
-        S.DottedSymbol modsym recsym = rangedData rdsym
-        getName sym st = P.symName $ rangedData $ stNameAt sym st
-        modName = getName modsym mods
-        recs = W.modRecs $ stAt modsym mods
-        recName = getName recsym recs
-        recWidth = stAt recsym recs
-
--- TODO: Handle crosses
-procStmt pmc modules (S.Cross rdsyms) rpts = rpts
-
-makeReports :: PerModCoverage -> SymbolTable W.Module -> [S.TLStmt] ->
-               Reports
-makeReports pmc mods = foldr (procStmt pmc mods) (Reports Map.empty)
-
-dumpReports :: Reports -> Handle -> IO ()
-dumpReports rpts handle =
-  put ("<!DOCTYPE html><html><head>" ++
-       "<meta charset='utf-8' />" ++
-       "<title>Functional coverage report</title></head><body>") >>
-  put "<h1>Single-variable coverage</h1>" >>
-  Map.traverseWithKey dcr (covers rpts) >>
-  put "</body></html>"
-  where put = hPutStr handle
-        dcr (modName, recName) = dumpCoverReport handle modName recName
+  where f cov path = Raw.updateCoverage cov path >>= reportErr
 
 run :: Args -> IO ()
-run args = do { scr <- Frontend.run (input args)
-              ; pmc <- swizzleCoverage <$> getCoverage (cover args)
-              ; createDirectoryIfMissing False (odir args)
-              ; withFile (odir args </> "index.html") WriteMode
-                (dumpReports
-                 (makeReports pmc (W.scrModules scr) (W.scrStmts scr)))
-              ; return ()
+run args = do { mods <- Frontend.run (input args)
+              ; cov <- readCoverage
+              ; mcov <- reportErr (Merge.mergeCoverage mods cov)
+              ; exitSuccess
               }
 
 main :: IO ()
