@@ -56,19 +56,23 @@ fileFooter = "`default_nettype wire\n"
 imports :: String
 imports =
   unlines [ "  import \"DPI-C\" context acov_record1 ="
-          , "    function void acov_record1 (input string name,"
+          , "    function void acov_record1 (input string mod,"
+          , "                                input longint grp,"
           , "                                input longint val);"
           , "  import \"DPI-C\" context acov_record2 ="
-          , "    function void acov_record2 (input string name,"
+          , "    function void acov_record2 (input string mod,"
+          , "                                input longint grp,"
           , "                                input longint val1,"
           , "                                input longint val0);"
           , "  import \"DPI-C\" context acov_record3 ="
-          , "    function void acov_record3 (input string name,"
+          , "    function void acov_record3 (input string mod,"
+          , "                                input longint grp,"
           , "                                input longint val2,"
           , "                                input longint val1,"
           , "                                input longint val0);"
           , "  import \"DPI-C\" context acov_record4 ="
-          , "    function void acov_record4 (input string name,"
+          , "    function void acov_record4 (input string mod,"
+          , "                                input longint grp,"
           , "                                input longint val3,"
           , "                                input longint val2,"
           , "                                input longint val1,"
@@ -215,7 +219,7 @@ writeGroup handle modname syms (idx, (guard, width)) =
   do { guarded <- startGuard handle syms guard
      ; put $ (if guarded then "  " else "") ++ "      acov_record"
      ; put $ show nwords
-     ; put $ " (\"" ++ modname ++ "." ++ show idx ++ "\", "
+     ; put $ " (\"" ++ modname ++ "\", " ++ show idx ++ ", "
      ; put $ showRecArgs idx width
      ; put ");\n"
      ; endGuard handle guarded

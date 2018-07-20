@@ -20,31 +20,35 @@
 namespace {
     struct recorder_t
     {
-        void record (const char *scope,
-                     const char *name,
+        void record (const char        *scope,
+                     const char        *modname,
+                     uint64_t           grp,
                      const std::string &value);
         void flush () const;
 
     private:
+        typedef std::string           modname_t;
         typedef std::string           scope_t;
-        typedef std::string           recname_t;
         typedef std::set<std::string> values_t;
 
-        typedef std::map<recname_t, values_t>      map_for_scope_t;
-        typedef std::map<scope_t, map_for_scope_t> rec_map_t;
+        // We store module -> scope -> grp -> values
+        typedef std::map<uint64_t, values_t>      scope_map_t;
+        typedef std::map<scope_t, scope_map_t>    module_map_t;
+        typedef std::map<modname_t, module_map_t> map_t;
 
-        rec_map_t data_;
+        map_t data_;
     };
 }
 
 void recorder_t::record (const char        *scope,
-                         const char        *name,
+                         const char        *modname,
+                         uint64_t           grp,
                          const std::string &value)
 {
     if (! scope) scope = "<NO SCOPE>";
-    if (! name) name = "<NO NAME>";
+    if (! modname) modname = "<NO MODULE>";
 
-    data_ [scope][name].insert (value);
+    data_ [modname][scope][grp].insert (value);
 }
 
 static void
@@ -81,28 +85,30 @@ void recorder_t::flush () const
 
     ofile << std::hex;
 
-    for (rec_map_t::const_iterator it0 = data_.begin ();
+    for (map_t::const_iterator it0 = data_.begin ();
          it0 != data_.end ();
          ++ it0) {
-        ofile << "SCOPE: " << it0->first << "\n";
-        for (map_for_scope_t::const_iterator it1 = it0->second.begin ();
+        ofile << "MODULE: " << it0->first << "\n";
+
+        for (module_map_t::const_iterator it1 = it0->second.begin ();
              it1 != it0->second.end ();
              ++ it1) {
-            // Write recname
-            ofile << it1->first << " : {";
+            ofile << "SCOPE: " << it1 -> first << "\n";
 
-            bool first = true;
-            for (values_t::const_iterator it2 = it1->second.begin ();
+            for (scope_map_t::const_iterator it2 = it1->second.begin ();
                  it2 != it1->second.end ();
                  ++ it2) {
-                // Write value
-                if (! first) {
-                    ofile << ", ";
+                ofile << it2->first << ": {";
+                bool first = true;
+                for (values_t::const_iterator it3 = it2->second.begin ();
+                     it3 != it2->second.end ();
+                     ++ it3) {
+                    if (! first) ofile << ", ";
+                    first = false;
+                    write_value (ofile, * it3);
                 }
-                write_value (ofile, *it2);
-                first = false;
+                ofile << "}\n";
             }
-            ofile << "}\n";
         }
     }
 }
@@ -139,31 +145,31 @@ static std::string ll_to_str (long long value)
 }
 
 extern "C" {
-    void acov_record1 (const char *name, long long value) {
+    void acov_record1 (const char *modname, long long grp, long long value) {
         const char *scope = svGetNameFromScope (svGetScope ());
-        get_recorder ()->record (scope, name, ll_to_str (value));
+        get_recorder ()->record (scope, modname, grp, ll_to_str (value));
     }
 
-    void acov_record2 (const char *name,
+    void acov_record2 (const char *modname, long long grp,
                        long long value1, long long value0) {
         const char *scope = svGetNameFromScope (svGetScope ());
-        get_recorder ()->record (scope, name,
+        get_recorder ()->record (scope, modname, grp,
                                  ll_to_str (value1) + ll_to_str (value0));
     }
 
-    void acov_record3 (const char *name,
+    void acov_record3 (const char *modname, long long grp,
                        long long value2, long long value1, long long value0) {
         const char *scope = svGetNameFromScope (svGetScope ());
-        get_recorder ()->record (scope, name,
+        get_recorder ()->record (scope, modname, grp,
                                  ll_to_str (value2) + ll_to_str (value1) +
                                  ll_to_str (value0));
     }
 
-    void acov_record4 (const char *name,
+    void acov_record4 (const char *modname, long long grp,
                        long long value3, long long value2,
                        long long value1, long long value0) {
         const char *scope = svGetNameFromScope (svGetScope ());
-        get_recorder ()->record (scope, name,
+        get_recorder ()->record (scope, modname, grp,
                                  ll_to_str (value3) + ll_to_str (value2) +
                                  ll_to_str (value1) + ll_to_str (value0));
     }
