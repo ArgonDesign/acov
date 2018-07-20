@@ -5,6 +5,7 @@
 // that.
 
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <set>
@@ -51,14 +52,23 @@ write_value (std::ofstream &ofile, const std::string &bytes)
 {
     assert ((bytes.size () & 7) == 0);
     unsigned nwords = bytes.size () / 8;
+    const uint64_t *words =
+        reinterpret_cast <const uint64_t *> (bytes.c_str ());
 
-    ofile << "{";
+    // The words array is stored MSB first, so we can write it out as
+    // a hex number by concatenation. We have to pad internal words
+    // with zeros if necessary but, to shrink the output slightly, we
+    // can avoid padding the first word.
+    //
+    // Since I suspect most recorded groups will be less than 64 bits
+    // in size, this should make a significant difference.
+    ofile << std::setfill('0');
     for (unsigned word = 0; word < nwords; ++ word) {
-        if (word)
-            ofile << ", ";
-        ofile << reinterpret_cast <const uint64_t *> (bytes.c_str ()) [word];
+        if (word) {
+            ofile << std::setw (16);
+        }
+        ofile << words [word];
     }
-    ofile << "}";
 }
 
 void recorder_t::flush () const
