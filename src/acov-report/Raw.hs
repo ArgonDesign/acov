@@ -121,7 +121,7 @@ dot :: Parser ()
 dot = T.reservedOp lexer "."
 
 parseMod :: Parser Statement
-parseMod = T.reserved lexer "SCOPE" >> colon >> (Module <$> sym)
+parseMod = T.reserved lexer "MODULE" >> colon >> (Module <$> sym)
 
 parseScope :: Parser Statement
 parseScope = T.reserved lexer "SCOPE" >> colon >>
