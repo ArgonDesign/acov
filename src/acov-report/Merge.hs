@@ -59,9 +59,9 @@ mergeScope mod scope sd =
 data GroupCoverage = GroupCoverage { gcVals :: Set.Set Integer
                                    , gcST :: SymbolTable ()
                                    , gcRecs :: [W.Record]
-                                     -- TODO: Add crosses here!
+                                   , gcCrosses :: [W.Cross]
                                    }
 
 mergeGrp :: (W.Group, Set.Set Integer) -> Either String GroupCoverage
 mergeGrp (grp, vals) =
-  return $ GroupCoverage vals (W.grpST grp) (W.grpRecs grp)
+  return $ GroupCoverage vals (W.grpST grp) (W.grpRecs grp) (W.grpCrosses grp)

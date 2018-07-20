@@ -1,6 +1,7 @@
 module Width
   ( run
   , Record(..)
+  , Cross(..)
   , Group(..)
   , Module(..)
   ) where
@@ -32,9 +33,12 @@ data Record = Record { recExpr :: Ranged E.Expression
                      , recWidth :: Int
                      }
 
+newtype Cross = Cross [Ranged Symbol]
+
 data Group = Group { grpST :: SymbolTable ()
                    , grpGuard :: Maybe (Ranged E.Expression)
                    , grpRecs :: [Record]
+                   , grpCrosses :: [Cross]
                    }
 
 data Module = Module { modName :: Ranged P.Symbol
@@ -232,10 +236,10 @@ fitsInBits :: Integer -> Int -> Bool
 fitsInBits n w = assert (w > 0) $ shift (abs n) (- sw) == 0
   where sw = if n >= 0 then w else w - 1
 
-takeStmt :: SymbolTable (Ranged E.Slice) -> E.Statement ->
-            ErrorsOr (Maybe Record)
+takeStmt :: SymbolTable (Ranged E.Slice) -> ([Record], [Cross]) ->
+            E.Statement -> ErrorsOr ([Record], [Cross])
 
-takeStmt st (E.Record expr rsym clist) =
+takeStmt st (recs, xs) (E.Record expr rsym clist) =
   do { w <- exprWidth st expr
      ; if w > 64 then
          bad1 $ copyRange expr $
@@ -250,7 +254,7 @@ takeStmt st (E.Record expr rsym clist) =
              good ()
          Just (P.CoverList vals) ->
            foldEO (\ _ val -> checkCover w val) () vals >> good ()
-     ; good $ Just $ Record expr rsym clist w
+     ; good $ (Record expr rsym clist w : recs, xs)
      }
   where sym = rangedData rsym
         checkCover w val =
@@ -261,15 +265,15 @@ takeStmt st (E.Record expr rsym clist) =
               "Cover list has entry of " ++ show int ++
               ", but the cover expression has width " ++ show w ++ "."
 
-takeStmt _ (E.Cross syms) = good Nothing
+takeStmt _ (recs, xs) (E.Cross syms) = good (recs, Cross syms : xs)
 
 readGroup :: SymbolTable (Ranged E.Slice) -> E.Group -> ErrorsOr Group
 readGroup symST (E.Group recST guard stmts) =
-  do { recs <- snd <$> (liftA2 (,)
-                        (checkGuard guard)
-                        (catMaybes <$> (mapEO (takeStmt symST) stmts)))
+  do { (recs, xs) <- snd <$> (liftA2 (,)
+                              (checkGuard guard)
+                              (foldEO (takeStmt symST) ([], []) stmts))
      ; return $
-       Group recST guard recs
+       Group recST guard (reverse recs) (reverse xs)
      }
   where checkGuard Nothing = good ()
         checkGuard (Just g) =
