@@ -19,7 +19,8 @@ import Control.Monad
 
 import Data.Array
 import Data.Bits
-import Data.Foldable
+import qualified Data.Foldable as Foldable
+import Data.Functor ((<$>))
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
@@ -74,7 +75,7 @@ checkWidth w n =
     Right ()
 
 checkWidths :: [W.Record] -> Set.Set Integer -> Either String ()
-checkWidths recs vals = traverse_ (checkWidth w) vals
+checkWidths recs vals = Foldable.traverse_ (checkWidth w) vals
   where w = sum (map W.recWidth recs)
 
 mergeGrp :: (W.Group, Set.Set Integer) -> Either String GroupCoverage

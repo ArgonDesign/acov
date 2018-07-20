@@ -10,7 +10,7 @@ module Raw
   , sdGetGroup
   ) where
 
-import Control.Applicative ((<*))
+import Control.Applicative ((<*), Applicative)
 import Control.Exception.Base
 import qualified Control.Exception as CE
 import Control.Monad
@@ -43,10 +43,7 @@ type IntegerSet = Set.Set Integer
 newtype ScopeData = ScopeData (Map.Map Int IntegerSet)
 
 sdMaxKey :: ScopeData -> Int
-sdMaxKey (ScopeData map) =
-  case Map.lookupMax map of
-    Just (idx, _) -> idx
-    Nothing -> -1
+sdMaxKey (ScopeData map) = if Map.null map then (-1) else fst $ Map.findMax map
 
 sdGetGroup :: ScopeData -> Int -> IntegerSet
 sdGetGroup (ScopeData map) n = Map.findWithDefault Set.empty n map
