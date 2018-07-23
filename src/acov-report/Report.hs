@@ -68,9 +68,15 @@ countHits gc =
           else
             (hits, 1 + cnt, badleft, bads)
 
-showMiss :: Handle -> Entry -> IO ()
-showMiss h (vals, val) =
-  hPutStr h ("<tr><td>" ++ show val ++ "</td></tr>")
+showMiss :: SymbolTable () -> Entry -> String
+showMiss st (vals, val) =
+  assert (not $ null vals) $
+  if length vals == 1 then assert (head vals == val) $ show val
+  else
+    assert (length names == length vals) $
+    intercalate ", " $
+    map (\ (n, v) -> n ++ "=" ++ show v) (zip names vals)
+  where names = map (symName . rangedData . fst) (stAssocs st)
 
 grpName :: GroupCoverage -> String
 grpName gc =
@@ -86,11 +92,14 @@ reportGrp h gc =
   put ("<p>" ++ name ++ " (" ++ show hits ++ "/" ++ show count ++ ")</p>") >>
   if hits /= count then
     assert (not $ null $ firstMisses) $
-    put ("<p>First " ++ show (length firstMisses) ++ " misses:</p><table>") >>
-    mapM_ (showMiss h) firstMisses >>
-    put "</table>"
+    put ("<p>First " ++ show (length firstMisses) ++
+         " misses:</p><p class='misses'>") >>
+    put (showMiss st (head firstMisses)) >>
+    mapM_ (\ e -> put $ "; " ++ showMiss st e) (tail firstMisses) >>
+    put "</p>"
   else
     return ()
   where put = hPutStr h
         name = grpName gc
+        st = gcST gc
         (hits, count, firstMisses) = countHits gc
