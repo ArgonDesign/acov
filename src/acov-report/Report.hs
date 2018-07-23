@@ -31,8 +31,7 @@ reportScope :: Handle -> ScopeCoverage -> IO ()
 reportScope h (ScopeCoverage name grps) =
   assert (not $ null grps) $
   hPutStr h ("<h2>" ++ name ++ "</h2>") >>
-  reportGrp h (head grps) >>
-  mapM_ (\ g -> hPutStr h "<hr/>" >> reportGrp h g) (tail grps)
+  mapM_ (reportGrp h) grps
 
 cross' :: [W.Record] -> [([Integer], Integer, Int)]
 cross' recs =
@@ -89,7 +88,7 @@ grpName gc =
 
 reportGrp :: Handle -> GroupCoverage -> IO ()
 reportGrp h gc =
-  put ("<p>" ++ name ++ " (" ++ show hits ++ "/" ++ show count ++ ")</p>") >>
+  put ("<h3>" ++ name ++ " (" ++ show hits ++ "/" ++ show count ++ ")</h3>") >>
   if hits /= count then
     assert (not $ null $ firstMisses) $
     put ("<p>First " ++ show (length firstMisses) ++
