@@ -92,13 +92,13 @@ reportGrp h gc =
   if hits /= count then
     assert (not $ null $ firstMisses) $
     put ("<p>First " ++ show (length firstMisses) ++
-         " misses:</p><p class='misses'>") >>
-    put (showMiss st (head firstMisses)) >>
-    mapM_ (\ e -> put $ "; " ++ showMiss st e) (tail firstMisses) >>
-    put "</p>"
+         " misses:</p><ul class='misses'>") >>
+    mapM_ rptMiss firstMisses >>
+    put "</ul>"
   else
     return ()
   where put = hPutStr h
         name = grpName gc
         st = gcST gc
         (hits, count, firstMisses) = countHits gc
+        rptMiss e = put $ "<li>" ++ showMiss st e ++ "</li>"
