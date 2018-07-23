@@ -1,5 +1,6 @@
 module Raw
   ( Coverage
+  , covCount
   , emptyCoverage
   , getModData
   , updateCoverage
@@ -62,14 +63,17 @@ traverseMD f (ModData map) = Map.traverseWithKey f map
 
 {-
   Coverage is the whole shebang. It is a map from module name to
-  associated data.
+  associated data, together with a counter that counts how many tests'
+  data it contains.
 -}
-newtype Coverage = Coverage (Map.Map String ModData)
+data Coverage = Coverage { covCount :: Int
+                         , covMap :: Map.Map String ModData
+                         }
 
-emptyCoverage = Coverage Map.empty
+emptyCoverage = Coverage 0 Map.empty
 
 getModData :: String -> Coverage -> ModData
-getModData modname (Coverage map) = Map.findWithDefault emptyMD modname map
+getModData modname cov = Map.findWithDefault emptyMD modname (covMap cov)
 
 {-
   Let's define a parser for coverage logs.
@@ -180,8 +184,8 @@ takeStatement ((smod, ssc), cov) (Record grp vals) =
       return ((smod, ssc), updCoverage (fromJust smod) sc grp vals cov)
 
 updCoverage :: String -> String -> Int -> IntegerSet -> Coverage -> Coverage
-updCoverage mod scope grp vals (Coverage map) =
-  Coverage $ Map.alter (Just . (updMD scope grp vals)) mod map
+updCoverage mod scope grp vals cov =
+  cov { covMap = Map.alter (Just . (updMD scope grp vals)) mod (covMap cov) }
 
 updMD :: String -> Int -> IntegerSet -> Maybe ModData -> ModData
 updMD scope grp vals Nothing = newMD scope grp vals
@@ -205,7 +209,9 @@ updGrp vals (Just vals') = vals <> vals'
 
 takeScript :: Coverage -> [Statement] -> Either String Coverage
 takeScript cov stmts =
-  snd <$> foldM takeStatement ((Nothing, Nothing), cov) stmts
+  do { cov' <- snd <$> foldM takeStatement ((Nothing, Nothing), cov) stmts
+     ; return $ cov' { covCount = covCount cov + 1 }
+     }
 
 takeContents :: Coverage -> FilePath -> String -> Either String Coverage
 takeContents cov path contents =

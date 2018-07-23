@@ -31,13 +31,15 @@ import Numeric (showHex)
   parsed coverage script. This might fail.
 -}
 
-newtype Coverage = Coverage [ModCoverage]
+data Coverage = Coverage { covCount :: Int
+                         , covMods :: [ModCoverage]
+                         }
 
 modName :: W.Module -> String
 modName = P.symName . rangedData . W.modName
 
 mergeCoverage :: [W.Module] -> Raw.Coverage -> Either String Coverage
-mergeCoverage mods raw = Coverage <$> mapM f mods
+mergeCoverage mods raw = Coverage (Raw.covCount raw) <$> mapM f mods
   where f mod = mergeMod mod (Raw.getModData (modName mod) raw)
 
 data ModCoverage = ModCoverage String [ScopeCoverage]

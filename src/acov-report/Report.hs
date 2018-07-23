@@ -7,6 +7,8 @@ import Control.Monad
 import Data.Bits
 import Data.List
 import qualified Data.Set as Set
+import Data.Time.LocalTime
+import Data.Time.Format
 import System.IO
 
 import Ranged
@@ -17,10 +19,19 @@ import qualified Width as W
 import Merge
 
 report :: Handle -> Coverage -> IO ()
-report h (Coverage mods) =
-  hPutStr h "<html><head><title>Coverage report</title></head><body>" >>
-  mapM_ (reportMod h) mods >>
-  hPutStr h "</body></html>"
+report h cov =
+  do { time <- getZonedTime
+     ; put ("<html><head><title>Coverage report</title></head><body>\
+            \<h1>Coverage report</h1>\
+            \<p>Coverage based on " ++
+            show (covCount cov) ++
+            " tests; report generated at " ++
+            formatTime defaultTimeLocale "%Y/%m/%d %H:%M" time ++
+            "</p><h1>Modules</h1>")
+     ; mapM_ (reportMod h) (covMods cov)
+     ; put "</body></html>"
+     }
+  where put = hPutStr h
 
 reportMod :: Handle -> ModCoverage -> IO ()
 reportMod h (ModCoverage name scopes) =
