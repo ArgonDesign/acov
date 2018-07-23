@@ -32,7 +32,7 @@ reportScope h (ScopeCoverage name grps) =
   assert (not $ null grps) $
   hPutStr h ("<h2>" ++ name ++ "</h2>") >>
   reportGrp h (head grps) >>
-  mapM_ (\ g -> hPutStr h "<hr/>" >> reportGrp h g) grps
+  mapM_ (\ g -> hPutStr h "<hr/>" >> reportGrp h g) (tail grps)
 
 cross' :: [W.Record] -> [([Integer], Integer, Int)]
 cross' recs =
