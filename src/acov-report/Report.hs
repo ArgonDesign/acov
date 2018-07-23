@@ -24,14 +24,16 @@ report h (Coverage mods) =
 
 reportMod :: Handle -> ModCoverage -> IO ()
 reportMod h (ModCoverage name scopes) =
-  hPutStr h ("<h1>Module " ++ name ++ "</h1>") >>
-  mapM_ (reportScope h) scopes
+  hPutStr h ("<h2>Module " ++ name ++ "</h2>") >>
+  mapM_ (reportScope h multiScope) scopes
+  where multiScope =
+          assert (not $ null scopes) $
+          not $ null $ tail scopes
 
-reportScope :: Handle -> ScopeCoverage -> IO ()
-reportScope h (ScopeCoverage name grps) =
-  assert (not $ null grps) $
-  hPutStr h ("<h2>" ++ name ++ "</h2>") >>
-  mapM_ (reportGrp h) grps
+reportScope :: Handle -> Bool -> ScopeCoverage -> IO ()
+reportScope h multiScope (ScopeCoverage name grps) =
+  (if multiScope then hPutStr h ("<h3>" ++ name ++ "</h3>") else return ()) >>
+  (assert (not $ null grps) $ mapM_ (reportGrp h) grps)
 
 cross' :: [W.Record] -> [([Integer], Integer, Int)]
 cross' recs =
@@ -88,7 +90,7 @@ grpName gc =
 
 reportGrp :: Handle -> GroupCoverage -> IO ()
 reportGrp h gc =
-  put ("<h3>" ++ name ++ " (" ++ show hits ++ "/" ++ show count ++ ")</h3>") >>
+  put ("<h4>" ++ name ++ " (" ++ show hits ++ "/" ++ show count ++ ")</h4>") >>
   if hits /= count then
     assert (not $ null $ firstMisses) $
     put ("<p>First " ++ show (length firstMisses) ++
