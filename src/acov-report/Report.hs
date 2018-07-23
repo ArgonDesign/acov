@@ -93,7 +93,7 @@ reportGrp h gc =
   put ("<h4>" ++ name ++ " (" ++ show hits ++ "/" ++ show count ++ ")</h4>") >>
   if hits /= count then
     assert (not $ null $ firstMisses) $
-    put ("<p>First " ++ show (length firstMisses) ++
+    put ("<p>" ++ tag ++ show (length firstMisses) ++
          " misses:</p><ul class='misses'>") >>
     mapM_ rptMiss firstMisses >>
     put "</ul>"
@@ -104,3 +104,4 @@ reportGrp h gc =
         st = gcST gc
         (hits, count, firstMisses) = countHits gc
         rptMiss e = put $ "<li>" ++ showMiss st e ++ "</li>"
+        tag = if count - hits > length (firstMisses) then "First " else ""
