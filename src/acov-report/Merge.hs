@@ -31,7 +31,7 @@ import Numeric (showHex)
   parsed coverage script. This might fail.
 -}
 
-data Coverage = Coverage { covCount :: Int
+data Coverage = Coverage { covTests :: Int
                          , covMods :: [ModCoverage]
                          }
 
