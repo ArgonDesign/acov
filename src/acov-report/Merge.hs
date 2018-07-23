@@ -50,7 +50,7 @@ mergeMod mod md =
 data ScopeCoverage = ScopeCoverage String [GroupCoverage]
 
 mergeScope :: W.Module -> String -> Raw.ScopeData ->
-                  Either String ScopeCoverage
+              Either String ScopeCoverage
 mergeScope mod scope sd =
   if Raw.sdMaxKey sd >= length (W.modGroups mod) then
     Left $

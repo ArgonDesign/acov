@@ -3,8 +3,11 @@ module Report
   ) where
 
 import Control.Exception.Base
+import Data.Bits
+import qualified Data.Set as Set
 import System.IO
 
+import qualified Width as W
 import Merge
 
 report :: Handle -> Coverage -> IO ()
@@ -25,5 +28,33 @@ reportScope h (ScopeCoverage name grps) =
   reportGrp h (head grps) >>
   mapM_ (\ g -> hPutStr h "<hr/>" >> reportGrp h g) grps
 
+cross :: [W.Record] -> [([Integer], Integer, Int)]
+cross recs =
+  assert (not $ null recs) $
+  if length recs == 1 then map (\ n -> ([n], n, w)) clist
+  else concatMap f $ cross (tail recs)
+  where
+    r0 = head recs
+    w = W.recWidth r0
+    clist = W.recClist r0
+    f (rst, n', w') = map (\ n -> (n : rst, shiftL n w' + n', w + w')) clist
+
+showLine :: GroupCoverage -> ([Integer], Integer, Int) ->
+             (Int, Int, [String]) -> (Int, Int, [String])
+showLine gc (vars, val, w) (hits, count, strs) =
+  (if isHit then 1 + hits else hits, 1 + count,
+   ("<span class='cov-" ++ hitmiss ++ "'>" ++ tickcross ++ "</span>") : strs)
+  where isHit = Set.member val (gcVals gc)
+        hitmiss = if isHit then "1" else "0"
+        tickcross = if isHit then tick else cross
+        tick = "&#x2713;"
+        cross = "&#x274c;"
+
 reportGrp :: Handle -> GroupCoverage -> IO ()
-reportGrp h gc = hPutStr h "<p>Group</p>"
+reportGrp h gc =
+  put ("<p>Group (" ++ show hits ++ "/" ++ show count ++ ")</p><table>") >>
+  mapM_ reportLine items >>
+  put "</table>"
+  where put = hPutStr h
+        (hits, count, items) = foldr (showLine gc) (0, 0, []) (cross (gcRecs gc))
+        reportLine str = put ("<tr><td>" ++ str ++ "</td></tr>")
