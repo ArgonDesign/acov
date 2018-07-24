@@ -4,12 +4,11 @@ module Report
 
 import Control.Exception.Base
 import Data.List
-import Data.Time.LocalTime
-import Data.Time.Format
 import System.IO
 
 import Ranged
 import SymbolTable
+import Time (stringTime)
 
 import Parser (symName)
 import qualified Width as W
@@ -17,14 +16,12 @@ import Count
 
 report :: Handle -> Coverage -> IO ()
 report h cov =
-  do { time <- getZonedTime
+  do { time <- stringTime
      ; put ("<html><head><title>Coverage report</title></head><body>\
             \<h1>Coverage report</h1>\
             \<p>Coverage based on " ++
             show (covTests cov) ++
-            " tests; report generated at " ++
-            formatTime defaultTimeLocale "%Y/%m/%d %H:%M" time ++
-            "</p><p>")
+            " tests; report generated at " ++ time ++ "</p><p>")
      ; put (showCounts "modules" (covCounts cov))
      ; put ("</p><h1>Modules</h1>")
      ; mapM_ (reportMod h) (covMods cov)
