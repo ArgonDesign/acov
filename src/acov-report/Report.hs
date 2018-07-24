@@ -68,21 +68,32 @@ grpName gc =
         recName r = symName $ rangedData $
                     stNameAt (rangedData (W.recSym r)) (gcST gc)
 
+wrapTag :: String -> String -> String
+wrapTag tag str = "<" ++ tag ++ ">" ++ str ++ "</" ++ tag ++ ">"
+
 reportGrp :: Handle -> GroupCoverage -> IO ()
 reportGrp h gc =
-  put ("<h4>" ++ name ++ " (" ++ showCount count ++ ")</h4>") >>
+  put (wrapTag "h4" $ name ++ " (" ++ showCount count ++ ")") >>
   if countFull count then
     return ()
   else
     assert (not $ null $ firstMisses) $
     put ("<p>" ++ tag ++ show (length firstMisses) ++
-         " misses:</p><ul class='misses'>") >>
-    mapM_ rptMiss firstMisses >>
-    put "</ul>"
+         " misses:</p>" ++
+         (if useUL then "<ul class='misses'>"
+          else "<p class='misses'>")) >>
+    rptMiss True (head firstMisses) >>
+    mapM_ (rptMiss False) (tail firstMisses) >>
+    put (if useUL then "</ul>" else "</p>")
   where put = hPutStr h
         firstMisses = gcMisses gc
         name = grpName gc
         count = gcCount gc
         st = gcST gc
-        rptMiss e = put $ "<li>" ++ showMiss st e ++ "</li>"
+        useUL = length (gcRecs gc) > 1
+        rptMiss first e =
+          put $
+          if useUL then wrapTag "li" $ showMiss st e
+          else if first then wrapTag "span" $ showMiss st e
+          else ", " ++ (wrapTag "span" $ showMiss st e)
         tag = if countMissed count > length (firstMisses) then "First " else ""
