@@ -18,13 +18,6 @@ PREFIX := /usr/local
 # we want to place built files.
 BUILD := build
 
-# SVDPI_DIR is a directory that contains svdpi.h. The contents of this
-# header is actually specified by the SystemVerilog standard, so we
-# don't have to get "the right header for the simulator" or similar.
-# But we do need one from somewhere. The default value is where
-# verilator puts the file when installed in the usual way.
-SVDPI_DIR := /usr/share/verilator/include/vltstd
-
 ###############################################################################
 # SECTION 2: Configuring with Cabal
 ###############################################################################
@@ -112,7 +105,7 @@ COMPILE.64    = $(CXX) -c -o $@ $(COMPILE_FLAGS) -m64 $<
 LINK.32       = $(CXX) -o $@ $(LINK_FLAGS) -m32 $^ $(ACOV_LIBS) $(LIBS)
 LINK.64       = $(CXX) -o $@ $(LINK_FLAGS) -m64 $^ $(ACOV_LIBS) $(LIBS)
 
-ACOV_CPPFLAGS := -I$(SVDPI_DIR)
+ACOV_CPPFLAGS := -Idata
 ACOV_CXXFLAGS := -Os
 
 $(BUILD)/dpi-32:
