@@ -5,7 +5,7 @@ module Parser
   , Port(..)
   , Statement(..)
   , Expression(..)
-  , CoverList(..)
+  , Cover(..)
   , Slice(..)
   , Atom(..)
   , parseScript
@@ -44,7 +44,7 @@ import VInt
          }
        }
 
-       record baz;
+       record baz cover bits;
        record qux as qxx;
     }
 
@@ -62,11 +62,12 @@ data Module = Module (Ranged Symbol) [Ranged Port] [Ranged Statement]
 
 data Port = Port Symbol (Maybe (Ranged Slice))
 
-data Statement = Record (Ranged Expression) (Maybe (Ranged Symbol)) (Maybe CoverList)
+data Statement = Record (Ranged Expression) (Maybe (Ranged Symbol)) (Maybe Cover)
                | When (Ranged Expression) [Ranged Statement]
                | Group [Ranged Statement]
 
-newtype CoverList = CoverList [Ranged VInt]
+data Cover = CoverList [Ranged VInt]
+           | CoverBits
 
 data Atom = AtomSym Symbol
           | AtomInt VInt
@@ -94,6 +95,7 @@ reservedNames = [ "module"
                 , "record"
                 , "as"
                 , "cover"
+                , "bits"
                 ]
 
 reservedOpNames = [ ";" , "," , ":" , "=" , "."
@@ -316,14 +318,16 @@ when = do { T.reserved lexer "when"
            ; return $ When guard stmts
            }
 
-coverList :: Parser CoverList
-coverList = CoverList <$> T.braces lexer (commaSep $ rangedParse integer)
+cover :: Parser Cover
+cover = T.reserved lexer "cover" >>
+        ((T.reserved lexer "bits" >> return CoverBits) <|>
+          (CoverList <$> T.braces lexer (commaSep $ rangedParse integer)))
 
 record :: Parser Statement
 record = do { T.reserved lexer "record"
             ; e <- expression
             ; name <- optionMaybe (T.reserved lexer "as" >> rangedParse sym)
-            ; clist <- optionMaybe (T.reserved lexer "cover" >> coverList)
+            ; clist <- optionMaybe cover
             ; semi
             ; return $ Record e name clist }
 

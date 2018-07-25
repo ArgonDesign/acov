@@ -2,6 +2,7 @@ module Expressions
   ( run
   , Expression(..)
   , Record(..)
+  , BitsRecord(..)
   , Group(..)
   , Module(..)
   , Slice(..)
@@ -37,9 +38,11 @@ data Expression = ExprSym Symbol
                 | ExprCond (Ranged Expression)
                   (Ranged Expression) (Ranged Expression)
 
-data Record = Record (Ranged Expression) (Ranged Symbol) (Maybe P.CoverList)
+data Record = Record (Ranged Expression) (Ranged Symbol) (Maybe [Ranged VInt])
+data BitsRecord = BitsRecord (Ranged Expression) (Ranged P.Symbol)
 
-data Group = Group (SymbolTable ()) (Maybe (Ranged Expression)) [Record]
+data Group = CrossGroup (SymbolTable ()) (Maybe (Ranged Expression)) [Record]
+           | BitsGroup (Maybe (Ranged Expression)) BitsRecord
 
 data Slice = Slice Int Int
 
@@ -123,12 +126,19 @@ tighten :: Ranged S.Expression -> ErrorsOr (Ranged Expression)
 tighten rse = copyRange rse <$> tighten' (rangedRange rse) (rangedData rse)
 
 tightenRecord :: S.Record -> ErrorsOr Record
-tightenRecord (S.Record expr name clist) =
-  (\ e -> Record e name clist) <$> tighten expr
+tightenRecord (S.Record expr name cover) =
+  (\ e -> Record e name cover) <$> tighten expr
+
+tightenBitsRecord :: S.BitsRecord -> ErrorsOr BitsRecord
+tightenBitsRecord (S.BitsRecord expr name) =
+  (\ e -> BitsRecord e name) <$> tighten expr
 
 tightenGroup :: S.Group -> ErrorsOr Group
-tightenGroup (S.Group st guard recs) =
-  liftA2 (Group st) (eoMaybe (tighten <$> guard)) (mapEO tightenRecord recs)
+tightenGroup (S.CrossGroup st guard recs) =
+  liftA2 (CrossGroup st)
+  (eoMaybe (tighten <$> guard)) (mapEO tightenRecord recs)
+tightenGroup (S.BitsGroup guard brec) =
+  liftA2 BitsGroup (eoMaybe (tighten <$> guard)) (tightenBitsRecord brec)
 
 tightenBitSel :: P.Symbol -> LCRange -> VInt -> ErrorsOr Integer
 tightenBitSel psym rng int =

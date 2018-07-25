@@ -63,10 +63,9 @@ mergeScope mod scope sd =
     ScopeCoverage scope <$>
     (mapM mergeGrp $ zip (W.modGroups mod) (map (Raw.sdGetGroup sd) [0..]))
 
-data GroupCoverage = GroupCoverage { gcVals :: Set.Set Integer
-                                   , gcST :: SymbolTable ()
-                                   , gcRecs :: [W.Record]
-                                   }
+data GroupCoverage =
+  GroupCoverage (Set.Set Integer)
+  (Either (SymbolTable (), [W.Record]) W.BitsRecord)
 
 checkWidth :: Int -> Integer -> Either String ()
 checkWidth w n =
@@ -76,13 +75,7 @@ checkWidth w n =
   else
     Right ()
 
-checkWidths :: [W.Record] -> Set.Set Integer -> Either String ()
-checkWidths recs vals = Foldable.traverse_ (checkWidth w) vals
-  where w = sum (map W.recWidth recs)
-
 mergeGrp :: (W.Group, Set.Set Integer) -> Either String GroupCoverage
 mergeGrp (grp, vals) =
-  do { checkWidths recs vals
-     ; return $ GroupCoverage vals (W.grpST grp) recs
-     }
-  where recs = W.grpRecs grp
+  Foldable.traverse_ (checkWidth (W.grpWidth grp)) vals >>
+  (return $ case grp of W.Group guard contents -> GroupCoverage vals contents)

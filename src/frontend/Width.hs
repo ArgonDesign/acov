@@ -1,7 +1,11 @@
 module Width
   ( run
   , Record(..)
+  , BitsRecord(..)
   , Group(..)
+  , grpWidth
+  , grpExprs
+  , grpGuard
   , Module(..)
   ) where
 
@@ -32,10 +36,25 @@ data Record = Record { recExpr :: Ranged E.Expression
                      , recWidth :: Int
                      }
 
-data Group = Group { grpST :: SymbolTable ()
-                   , grpGuard :: Maybe (Ranged E.Expression)
-                   , grpRecs :: [Record]
-                   }
+data BitsRecord = BitsRecord { brExpr :: Ranged E.Expression
+                             , brSym :: Ranged P.Symbol
+                             , brWidth :: Int
+                             }
+
+data Group = Group
+             (Maybe (Ranged E.Expression))
+             (Either (SymbolTable (), [Record]) BitsRecord)
+
+grpWidth :: Group -> Int
+grpWidth (Group _ (Left (_, recs))) = sum $ map recWidth recs
+grpWidth (Group _ (Right brec)) = brWidth brec
+
+grpExprs :: Group -> [Ranged E.Expression]
+grpExprs (Group _ (Left (_, recs))) = map recExpr recs
+grpExprs (Group _ (Right brec)) = [brExpr brec]
+
+grpGuard :: Group -> Maybe (Ranged E.Expression)
+grpGuard (Group guard _) = guard
 
 data Module = Module { modName :: Ranged P.Symbol
                      , modSyms :: SymbolTable (Ranged E.Slice)
@@ -232,7 +251,7 @@ fitsInBits :: Integer -> Int -> Bool
 fitsInBits n w = assert (w > 0) $ shift (abs n) (- sw) == 0
   where sw = if n >= 0 then w else w - 1
 
-makeCList :: LCRange -> Int -> Maybe P.CoverList -> ErrorsOr [Integer]
+makeCList :: LCRange -> Int -> Maybe [Ranged VInt] -> ErrorsOr [Integer]
 makeCList rng w Nothing =
   if w > 16 then
     bad1 $ Ranged rng
@@ -241,7 +260,7 @@ makeCList rng w Nothing =
     return [0..max]
   where max = (shiftL (1 :: Integer) w) - 1
 
-makeCList _ w (Just (P.CoverList vals)) = mapEO f vals
+makeCList _ w (Just vals) = mapEO f vals
   where f v =
           let int = toInteger $ rangedData v in
             if fitsInBits int w then good int
@@ -251,36 +270,38 @@ makeCList _ w (Just (P.CoverList vals)) = mapEO f vals
               ", but the cover expression has width " ++ show w ++ "."
 
 takeRec :: SymbolTable (Ranged E.Slice) -> E.Record -> ErrorsOr Record
-
 takeRec st (E.Record expr rsym clist) =
   do { w <- exprWidth st expr
-     ; if w > 64 then
-         bad1 $ copyRange expr $
-         "Record statement with width " ++ show w ++ " (max 64)."
-       else good ()
      ; clist' <- makeCList (rangedRange expr) w clist
      ; good $ Record expr rsym clist' w
      }
 
-readGroup :: SymbolTable (Ranged E.Slice) -> E.Group -> ErrorsOr Group
-readGroup symST (E.Group recST guard recs) =
-  do { recs <- snd <$> (liftA2 (,)
-                         (checkGuard guard)
-                         (mapEO (takeRec symST) recs))
-     ; return $
-       Group recST guard recs
+checkGuard :: SymbolTable (Ranged E.Slice) -> Maybe (Ranged E.Expression) ->
+              ErrorsOr ()
+checkGuard _ Nothing = good ()
+checkGuard symST (Just g) =
+  do { gw <- exprWidth symST g
+     ; if gw /= 1 then
+         bad1 $ copyRange g $
+         "Block is guarded by expression with width " ++ show gw ++ ", not 1."
+       else
+         good ()
      }
-  where checkGuard Nothing = good ()
-        checkGuard (Just g) =
-          do { gw <- exprWidth symST g
-             ; if gw /= 1 then
-                 bad1 $ copyRange g $
-                 ("Block is guarded by expression with width " ++
-                   show gw ++ ", not 1.")
-               else
-                 good ()
-             }
 
+readGroup :: SymbolTable (Ranged E.Slice) -> E.Group -> ErrorsOr Group
+readGroup symST (E.CrossGroup recST guard recs) =
+  do { recs <- snd <$> (liftA2 (,)
+                         (checkGuard symST guard)
+                         (mapEO (takeRec symST) recs))
+     ; return $ Group guard $ Left (recST, recs)
+     }
+
+readGroup symST (E.BitsGroup guard (E.BitsRecord expr name)) =
+  do { w <- snd <$> (liftA2 (,)
+                      (checkGuard symST guard)
+                      (exprWidth symST expr))
+     ; return $ Group guard $ Right $ BitsRecord expr name w
+     }
 
 readModule :: E.Module -> ErrorsOr Module
 readModule mod =

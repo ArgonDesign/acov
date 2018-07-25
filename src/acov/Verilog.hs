@@ -167,8 +167,8 @@ writeWire handle syms (idx, grp) =
   return (W.grpGuard grp, width)
   where put = hPutStr handle
         name = "acov_recgroup_" ++ show idx
-        width = sum $ map W.recWidth (W.grpRecs grp)
-        exprs = map W.recExpr (W.grpRecs grp)
+        width = W.grpWidth grp
+        exprs = W.grpExprs grp
 
 startAlways :: Handle -> IO ()
 startAlways handle =

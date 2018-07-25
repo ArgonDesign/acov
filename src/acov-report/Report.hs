@@ -59,17 +59,47 @@ showMiss st vals =
     map (\ (n, v) -> n ++ "=" ++ show v) (zip names vals)
   where names = map (symName . rangedData . fst) (stAssocs st)
 
-grpName :: GroupCoverage -> String
-grpName gc =
-  assert (not $ null recs) $
-  if length recs == 1 then recName (head recs)
-  else intercalate ", " (map recName recs)
-  where recs = gcRecs gc
-        recName r = symName $ rangedData $
-                    stNameAt (rangedData (W.recSym r)) (gcST gc)
+showMissBit :: (Int, Bool) -> String
+showMissBit (i, b) = "bit " ++ show i ++ (if b then " set" else " clear")
 
 wrapTag :: String -> String -> String
 wrapTag tag str = "<" ++ tag ++ ">" ++ str ++ "</" ++ tag ++ ">"
+
+reportMisses :: Handle -> GroupCoverage -> IO ()
+reportMisses h (GroupCoverage _ count (Left (syms, recs, missing))) =
+  assert (not $ null $ missing) $
+  put ("<p>" ++ tag ++ show (length missing) ++
+        " misses:</p>" ++
+        (if ul then "<ul class='misses'>"
+          else "<p class='misses'>")) >>
+  rptMiss True (head missing) >>
+  mapM_ (rptMiss False) (tail missing) >>
+  put (if ul then "</ul>" else "</p>")
+  where put = hPutStr h
+        partial = countMissed count > length missing
+        tag = if partial then "First " else ""
+        ul = length recs > 1
+        rptMiss first e =
+          put $
+          if ul then wrapTag "li" $ showMiss syms e
+          else if first then wrapTag "span" $ showMiss syms e
+          else ", " ++ (wrapTag "span" $ showMiss syms e)
+
+reportMisses h (GroupCoverage _ count (Right (brec, bads))) =
+  assert (not $ null $ bads) $
+  put ("<p>" ++ tag ++ show (length bads) ++
+        " misses:</p>" ++
+        "<p class='misses'>") >>
+  rptMiss True (head bads) >>
+  mapM_ (rptMiss False) (tail bads) >>
+  put "</p>"
+  where put = hPutStr h
+        partial = countMissed count > length bads
+        tag = if partial then "First " else ""
+        rptMiss first e =
+          put $
+          (if first then "" else ", ") ++
+          (wrapTag "span" $ showMissBit e)
 
 reportGrp :: Handle -> GroupCoverage -> IO ()
 reportGrp h gc =
@@ -77,23 +107,7 @@ reportGrp h gc =
   if countFull count then
     return ()
   else
-    assert (not $ null $ firstMisses) $
-    put ("<p>" ++ tag ++ show (length firstMisses) ++
-         " misses:</p>" ++
-         (if useUL then "<ul class='misses'>"
-          else "<p class='misses'>")) >>
-    rptMiss True (head firstMisses) >>
-    mapM_ (rptMiss False) (tail firstMisses) >>
-    put (if useUL then "</ul>" else "</p>")
+    reportMisses h gc
   where put = hPutStr h
-        firstMisses = gcMisses gc
-        name = grpName gc
+        name = gcName gc
         count = gcCount gc
-        st = gcST gc
-        useUL = length (gcRecs gc) > 1
-        rptMiss first e =
-          put $
-          if useUL then wrapTag "li" $ showMiss st e
-          else if first then wrapTag "span" $ showMiss st e
-          else ", " ++ (wrapTag "span" $ showMiss st e)
-        tag = if countMissed count > length (firstMisses) then "First " else ""

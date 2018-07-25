@@ -2,6 +2,7 @@ module Symbols
   ( Module(..)
   , Group(..)
   , Record(..)
+  , BitsRecord(..)
   , Expression(..)
   , Atom(..)
   , run
@@ -46,9 +47,11 @@ data Expression = ExprAtom Atom
                 | ExprCond (Ranged Expression)
                   (Ranged Expression) (Ranged Expression)
 
-data Record = Record (Ranged Expression) (Ranged Symbol) (Maybe P.CoverList)
+data Record = Record (Ranged Expression) (Ranged Symbol) (Maybe [Ranged VInt])
+data BitsRecord = BitsRecord (Ranged Expression) (Ranged P.Symbol)
 
-data Group = Group (SymbolTable ()) (Maybe (Ranged Expression)) [Record]
+data Group = CrossGroup (SymbolTable ()) (Maybe (Ranged Expression)) [Record]
+           | BitsGroup (Maybe (Ranged Expression)) BitsRecord
 
 type PortSyms = SymbolTable (Maybe (Ranged P.Slice))
 
@@ -145,23 +148,32 @@ getRecName expr Nothing =
     P.ExprAtom (P.AtomSym sym) -> good $ copyRange expr sym
     _ -> bad1 $ copyRange expr "Cannot guess a name for recorded expression."
 
-takeStmt :: PortSyms -> (STBuilder (), [Record]) -> G.Record ->
-            ErrorsOr (STBuilder (), [Record])
+takeRecord :: PortSyms -> (STBuilder (), [Record]) -> G.Record ->
+              ErrorsOr (STBuilder (), [Record])
 
-takeStmt ps (stb, stmts) (G.Record expr as clist) =
+takeRecord ps (stb, recs) (G.Record expr as cover) =
   do { (expr', psym) <- liftA2 (,) (readExpression ps expr) (getRecName expr as)
      ; stb' <- stbAdd "record name" stb (rangedRange psym) psym ()
      ; let as' = copyRange psym (stbLastSymbol stb')
-     ; good $ (stb', Record expr' as' clist : stmts)
+     ; good $ (stb', Record expr' as' cover : recs)
      }
 
+readBitRecord :: PortSyms -> G.BitsRecord -> ErrorsOr BitsRecord
+readBitRecord ps (G.BitsRecord expr name) =
+  liftA2 BitsRecord (readExpression ps expr) (getRecName expr name)
+
 readGroup :: PortSyms -> G.Group -> ErrorsOr Group
-readGroup ps (G.Group guard stmts) =
-  do { (guard', (stb, stmts')) <- liftA2 (,)
-                                  (eoMaybe (readExpression ps <$> guard))
-                                  (foldEO (takeStmt ps) (stbEmpty, []) stmts)
-     ; return $ Group (stbToSymbolTable stb) guard' (reverse stmts')
+
+readGroup ps (G.CrossGroup guard recs) =
+  do { (guard', (stb, recs')) <- liftA2 (,)
+                                 (eoMaybe (readExpression ps <$> guard))
+                                 (foldEO (takeRecord ps) (stbEmpty, []) recs)
+     ; return $ CrossGroup (stbToSymbolTable stb) guard' (reverse recs')
      }
+
+readGroup ps (G.BitsGroup guard brec) =
+  liftA2 BitsGroup
+  (eoMaybe (readExpression ps <$> guard)) (readBitRecord ps brec)
 
 readModule :: G.Module -> ErrorsOr Module
 readModule (G.Module name ports groups) =
