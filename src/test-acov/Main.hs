@@ -11,12 +11,14 @@ import qualified Parser as P
 import Text.Parsec
 import Data.Either
 
+import qualified TestRangeList as TRL
+
 main = defaultMain tests
 
 tests =
   [ testGroup "basic parsing"
-    [ testCase "sym" test_parse_sym
-    ]
+    [ testCase "sym" test_parse_sym ]
+  , testGroup "RangedList" TRL.tests
   ]
 
 -- Check symbol parsing
