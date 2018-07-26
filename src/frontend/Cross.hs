@@ -81,6 +81,6 @@ crossMisses n hits cross = f n (crossList cross)
   where f k [] = []
         f 0 _ = []
         f k (v:vs) = if Set.member (glue widths v) hits
-                     then f (k - 1) vs
+                     then f k vs
                      else v : (f (k - 1) vs)
         widths = crossWidths cross
