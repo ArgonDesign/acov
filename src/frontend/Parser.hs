@@ -344,7 +344,7 @@ module' :: Parser Module
 module' = do { T.reserved lexer "module"
              ; name <- rangedParse sym
              ; ports <- portList
-             ; stmts <- T.braces lexer (many1 statement)
+             ; stmts <- T.braces lexer (many statement)
              ; return $ Module name ports stmts
              }
 
