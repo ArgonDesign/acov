@@ -33,8 +33,7 @@ data BitsRecord = BitsRecord
   cross or it contains a single record as a "BitsRecord". This means
   we want to see each bit in the recorded expression as 1 and 0.
 -}
-data Group = CrossGroup (Maybe (Ranged P.Expression)) [Record]
-           | BitsGroup (Maybe (Ranged P.Expression)) BitsRecord
+data Group = Group [Ranged P.Expression] (Either [Record] BitsRecord)
 
 data Module = Module (Ranged P.Symbol) [Ranged P.Port] [Group]
 
@@ -45,31 +44,31 @@ tlReadStmt rstmt = f (rangedData rstmt)
         -- CoverBits records turn into special BitsGroups. Other
         -- records make CrossGroups.
         f (P.Record expr as (Just P.CoverBits)) =
-          good [BitsGroup Nothing $ BitsRecord expr as]
+          good [Group [] $ Right $ BitsRecord expr as]
         f (P.Record expr as (Just (P.CoverList vals))) =
-          good [CrossGroup Nothing [Record expr as (Just vals)]]
+          good [Group [] $ Left [Record expr as (Just vals)]]
         f (P.Record expr as Nothing) =
-          good [CrossGroup Nothing [Record expr as Nothing]]
-        -- When and group statements mean we recurse. CoverBits
-        -- records aren't allowed inside a group statement.
-        f (P.When guard stmts) = mapEO (whenReadStmt (Just guard)) stmts
+          good [Group [] $ Left [Record expr as Nothing]]
+        f (P.When guard stmts) = concat <$> mapEO (whenReadStmt [guard]) stmts
         f (P.Group stmts) = do { body <- mapEO groupReadStmt stmts
-                               ; good [CrossGroup Nothing body]
+                               ; good [Group [] $ Left body]
                                }
 
-whenReadStmt :: Maybe (Ranged P.Expression) -> Ranged P.Statement ->
-                ErrorsOr Group
-whenReadStmt guard rstmt = f (rangedData rstmt)
+whenReadStmt :: [Ranged P.Expression] -> Ranged P.Statement -> ErrorsOr [Group]
+whenReadStmt guards rstmt = f (rangedData rstmt)
   where rng = rangedRange rstmt
         erk x = bad1 $ Ranged rng x
         f (P.Record expr as (Just P.CoverBits)) =
-          good $ BitsGroup guard $ BitsRecord expr as
+          good $ [Group guards $ Right $ BitsRecord expr as]
         f (P.Record expr as (Just (P.CoverList vals))) =
-          good $ CrossGroup guard [Record expr as (Just vals)]
+          good $ [Group guards $ Left [Record expr as (Just vals)]]
         f (P.Record expr as Nothing) =
-          good $ CrossGroup guard [Record expr as Nothing]
-        f (P.When _ _) = erk "nested when blocks."
-        f (P.Group stmts) = CrossGroup guard <$> mapEO groupReadStmt stmts
+          good $ [Group guards $ Left [Record expr as Nothing]]
+        f (P.When guard stmts) = concat <$>
+                                 mapEO (whenReadStmt (guard : guards)) stmts
+        f (P.Group stmts) = do { recs <- mapEO groupReadStmt stmts
+                               ; good [Group guards $ Left recs]
+                               }
 
 groupReadStmt :: Ranged P.Statement -> ErrorsOr Record
 groupReadStmt rstmt = f (rangedData rstmt)

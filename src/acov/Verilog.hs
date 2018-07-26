@@ -7,7 +7,7 @@ import Data.Array
 import Data.Bits
 import qualified Data.Foldable as Foldable
 import Data.Functor
-import Data.Maybe
+import Data.List
 import System.Directory
 import System.FilePath
 import System.IO
@@ -152,7 +152,7 @@ showExpression64 w syms rexpr =
   where rest = showExpression syms 0 rexpr
 
 writeWire :: Handle -> SymbolTable (Ranged E.Slice) -> (Int, W.Group) ->
-             IO (Maybe (Ranged E.Expression), Int)
+             IO ([Ranged E.Expression], Int)
 writeWire handle syms (idx, grp) =
   assert (width > 0)
   put "  wire [" >>
@@ -164,7 +164,7 @@ writeWire handle syms (idx, grp) =
   put " = " >>
   put (snd $ showExpression' syms (E.ExprConcat (head exprs) (tail exprs))) >>
   put ";\n\n" >>
-  return (W.grpGuard grp, width)
+  return (W.grpGuards grp, width)
   where put = hPutStr handle
         name = "acov_recgroup_" ++ show idx
         width = W.grpWidth grp
@@ -177,13 +177,14 @@ startAlways handle =
   where put = hPutStr handle 
 
 startGuard :: Handle -> SymbolTable (Ranged E.Slice) ->
-              Maybe (Ranged E.Expression) -> IO Bool
-startGuard _ _ Nothing = return False
-startGuard handle syms (Just guard) =
-  hPutStr handle "      if (" >>
-  hPutStr handle (showExpression syms 0 guard) >>
-  hPutStr handle ") begin\n" >>
+              [Ranged E.Expression] -> IO Bool
+startGuard _ _ [] = return False
+startGuard handle syms guards =
+  put "      if ((" >>
+  put (intercalate ") && (" (map (showExpression syms 0) guards)) >>
+  put ")) begin\n" >>
   return True
+  where put = hPutStr handle
 
 endGuard :: Handle -> Bool -> IO ()
 endGuard _ False = return ()
@@ -211,7 +212,7 @@ showRecArgs idx width =
           rst True (nleft - 1)
 
 writeGroup :: Handle -> String -> SymbolTable (Ranged E.Slice) ->
-              (Int, (Maybe (Ranged E.Expression), Int)) -> IO ()
+              (Int, ([Ranged E.Expression], Int)) -> IO ()
 writeGroup handle modname syms (idx, (guard, width)) =
   -- TODO: We need a pass to guarantee the assertions hold
   assert (nwords > 0)

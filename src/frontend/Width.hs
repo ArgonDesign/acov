@@ -5,7 +5,7 @@ module Width
   , Group(..)
   , grpWidth
   , grpExprs
-  , grpGuard
+  , grpGuards
   , Module(..)
   ) where
 
@@ -43,7 +43,7 @@ data BitsRecord = BitsRecord { brExpr :: Ranged E.Expression
                              }
 
 data Group = Group
-             (Maybe (Ranged E.Expression))
+             [Ranged E.Expression]
              (Either (SymbolTable (), [Record]) BitsRecord)
 
 grpWidth :: Group -> Int
@@ -54,8 +54,8 @@ grpExprs :: Group -> [Ranged E.Expression]
 grpExprs (Group _ (Left (_, recs))) = map recExpr recs
 grpExprs (Group _ (Right brec)) = [brExpr brec]
 
-grpGuard :: Group -> Maybe (Ranged E.Expression)
-grpGuard (Group guard _) = guard
+grpGuards :: Group -> [Ranged E.Expression]
+grpGuards (Group guards _) = guards
 
 data Module = Module { modName :: Ranged P.Symbol
                      , modSyms :: SymbolTable (Ranged E.Slice)
@@ -287,31 +287,29 @@ takeRec st (E.Record expr rsym clist) =
      ; good $ Record expr rsym clist' w
      }
 
-checkGuard :: SymbolTable (Ranged E.Slice) -> Maybe (Ranged E.Expression) ->
-              ErrorsOr ()
-checkGuard _ Nothing = good ()
-checkGuard symST (Just g) =
-  do { gw <- exprWidth symST g
+checkGuard :: SymbolTable (Ranged E.Slice) -> Ranged E.Expression -> ErrorsOr ()
+checkGuard symST guard =
+  do { gw <- exprWidth symST guard
      ; if gw /= 1 then
-         bad1 $ copyRange g $
+         bad1 $ copyRange guard $
          "Block is guarded by expression with width " ++ show gw ++ ", not 1."
        else
          good ()
      }
 
 readGroup :: SymbolTable (Ranged E.Slice) -> E.Group -> ErrorsOr Group
-readGroup symST (E.CrossGroup recST guard recs) =
-  do { recs <- snd <$> (liftA2 (,)
-                         (checkGuard symST guard)
+readGroup symST (E.Group guards (Left (recST, recs))) =
+  do { recs' <- snd <$> (liftA2 (,)
+                         (mapEO (checkGuard symST) guards)
                          (mapEO (takeRec symST) recs))
-     ; return $ Group guard $ Left (recST, recs)
+     ; return $ Group guards $ Left (recST, recs')
      }
 
-readGroup symST (E.BitsGroup guard (E.BitsRecord expr name)) =
+readGroup symST (E.Group guards (Right (E.BitsRecord expr name))) =
   do { w <- snd <$> (liftA2 (,)
-                      (checkGuard symST guard)
+                      (mapEO (checkGuard symST) guards)
                       (exprWidth symST expr))
-     ; return $ Group guard $ Right $ BitsRecord expr name w
+     ; return $ Group guards $ Right $ BitsRecord expr name w
      }
 
 readModule :: E.Module -> ErrorsOr Module

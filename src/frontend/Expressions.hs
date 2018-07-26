@@ -45,8 +45,9 @@ data Record = Record
 
 data BitsRecord = BitsRecord (Ranged Expression) (Ranged P.Symbol)
 
-data Group = CrossGroup (SymbolTable ()) (Maybe (Ranged Expression)) [Record]
-           | BitsGroup (Maybe (Ranged Expression)) BitsRecord
+data Group = Group
+             [Ranged Expression]
+             (Either (SymbolTable (), [Record]) BitsRecord)
 
 data Slice = Slice Int Int
 
@@ -138,11 +139,19 @@ tightenBitsRecord (S.BitsRecord expr name) =
   (\ e -> BitsRecord e name) <$> tighten expr
 
 tightenGroup :: S.Group -> ErrorsOr Group
-tightenGroup (S.CrossGroup st guard recs) =
-  liftA2 (CrossGroup st)
-  (eoMaybe (tighten <$> guard)) (mapEO tightenRecord recs)
-tightenGroup (S.BitsGroup guard brec) =
-  liftA2 BitsGroup (eoMaybe (tighten <$> guard)) (tightenBitsRecord brec)
+tightenGroup (S.Group guards (Left (st, recs))) =
+  do { (guards', recs') <- liftA2 (,)
+                           (mapEO tighten guards)
+                           (mapEO tightenRecord recs)
+     ; return $ Group guards' $ Left (st, recs')
+     }
+
+tightenGroup (S.Group guards (Right brec)) =
+  do { (guards', brec') <- liftA2 (,)
+                           (mapEO tighten guards)
+                           (tightenBitsRecord brec)
+     ; return $ Group guards' $ Right brec'
+     }
 
 tightenBitSel :: P.Symbol -> LCRange -> VInt -> ErrorsOr Integer
 tightenBitSel psym rng int =
