@@ -12,7 +12,6 @@ import qualified Parser as P
 
 import Ranged
 import ErrorsOr
-import VInt
 
 {-
   This pass is in charge of putting when/group blocks into a canonical
@@ -23,7 +22,7 @@ import VInt
 data Record = Record
               (Ranged P.Expression)
               (Maybe (Ranged P.Symbol))
-              (Maybe [Ranged VInt])
+              (Maybe [(Ranged Integer, Ranged Integer)])
 
 data BitsRecord = BitsRecord
                   (Ranged P.Expression)

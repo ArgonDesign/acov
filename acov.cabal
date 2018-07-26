@@ -22,7 +22,9 @@ library
                      , Operators
                      , VInt
                      , CList
+                     , Count
                      , RangeList
+                     , Cross
                      , Parser
                      , Grouping
                      , SymbolTable
@@ -74,7 +76,7 @@ executable acov-report
   main-is:             Main.hs
   other-modules:       Raw
                      , Merge
-                     , Count
+                     , CountPass
                      , Time
                      , Report
   build-depends:       base >=4.6.0.1 && <4.11

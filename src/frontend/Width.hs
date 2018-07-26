@@ -23,6 +23,7 @@ import ErrorsOr
 import Operators
 import VInt
 import Ranged
+import RangeList
 
 {-
   The width pass does width checking (working with a Verilog-like
@@ -32,7 +33,7 @@ import Ranged
 -}
 data Record = Record { recExpr :: Ranged E.Expression
                      , recSym :: Ranged Symbol
-                     , recClist :: [Integer]
+                     , recClist :: RangeList
                      , recWidth :: Int
                      }
 
@@ -251,23 +252,33 @@ fitsInBits :: Integer -> Int -> Bool
 fitsInBits n w = assert (w > 0) $ shift (abs n) (- sw) == 0
   where sw = if n >= 0 then w else w - 1
 
-makeCList :: LCRange -> Int -> Maybe [Ranged VInt] -> ErrorsOr [Integer]
+makeCList :: LCRange -> Int ->
+             Maybe [(Ranged Integer, Ranged Integer)] -> ErrorsOr RangeList
 makeCList rng w Nothing =
   if w > 16 then
     bad1 $ Ranged rng
     "Record has width more than 16 and no cover list."
   else
-    return [0..max]
+    return $ rlRange (0, max)
   where max = (shiftL (1 :: Integer) w) - 1
 
-makeCList _ w (Just vals) = mapEO f vals
-  where f v =
-          let int = toInteger $ rangedData v in
-            if fitsInBits int w then good int
-            else
-              bad1 $ copyRange v $
-              "Cover list has entry of " ++ show int ++
-              ", but the cover expression has width " ++ show w ++ "."
+makeCList _ w (Just pairs) = foldEO f rlEmpty pairs
+  where f rl (lo, hi) =
+          do { chkRng lo
+             ; chkRng hi
+             ; if rangedData hi < rangedData lo then
+                 bad1 $ copyRange hi $
+                 "Cover list has a range with min less than max."
+               else
+                 good $ rlAdd (rangedData lo, rangedData hi) rl
+             }
+        chkRng x =
+          if (not $ fitsInBits (rangedData x) w) then
+            bad1 $ copyRange x $
+            "Cover list has entry of " ++ show (rangedData x) ++
+            ", but the cover expression has width " ++ show w ++ "."
+          else
+            return ()
 
 takeRec :: SymbolTable (Ranged E.Slice) -> E.Record -> ErrorsOr Record
 takeRec st (E.Record expr rsym clist) =

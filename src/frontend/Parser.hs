@@ -19,6 +19,7 @@ import Control.Applicative ((<*))
 import Data.Char (digitToInt)
 import Data.Functor ((<$>))
 import Data.Functor.Identity (Identity)
+import Data.Maybe (fromMaybe)
 import qualified Text.Parsec.Language as L
 import qualified Text.Parsec.Token as T
 import Text.Parsec
@@ -39,7 +40,7 @@ import VInt
     module xxx (foo [10:0], bar [19:0], baz [1:0], qux) {
        when (foo [0]) {
          group {
-           record foo cover {0, 12, 2047};
+           record foo cover {0..10, 12, 2047};
            record foo + bar[10:0] as foobar cover {0, 1};
          }
        }
@@ -66,7 +67,7 @@ data Statement = Record (Ranged Expression) (Maybe (Ranged Symbol)) (Maybe Cover
                | When (Ranged Expression) [Ranged Statement]
                | Group [Ranged Statement]
 
-data Cover = CoverList [Ranged VInt]
+data Cover = CoverList [(Ranged Integer, Ranged Integer)]
            | CoverBits
 
 data Atom = AtomSym Symbol
@@ -98,7 +99,7 @@ reservedNames = [ "module"
                 , "bits"
                 ]
 
-reservedOpNames = [ ";" , "," , ":" , "=" , "."
+reservedOpNames = [ ";" , "," , ":" , "=" , ".."
                   , "!" , "~" , "&" , "|" , "~&" , "~|"
                   , "^" , "~^" , "^~"
                   , "+" , "-"
@@ -318,10 +319,18 @@ when = do { T.reserved lexer "when"
            ; return $ When guard stmts
            }
 
+coverpoint :: Parser (Ranged Integer, Ranged Integer)
+coverpoint = do { a <- rangedParse (toInteger <$> integer)
+                ; b <- optionMaybe
+                       (T.reservedOp lexer ".." >>
+                        rangedParse (toInteger <$> integer))
+                ; return (a, fromMaybe a b)
+                }
+
 cover :: Parser Cover
 cover = T.reserved lexer "cover" >>
         ((T.reserved lexer "bits" >> return CoverBits) <|>
-          (CoverList <$> T.braces lexer (commaSep $ rangedParse integer)))
+          (CoverList <$> T.braces lexer (commaSep $ coverpoint)))
 
 record :: Parser Statement
 record = do { T.reserved lexer "record"

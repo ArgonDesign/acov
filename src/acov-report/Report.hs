@@ -6,13 +6,14 @@ import Control.Exception.Base
 import Data.List
 import System.IO
 
+import Count
 import Ranged
 import SymbolTable
 import Time (stringTime)
 
 import Parser (symName)
 import qualified Width as W
-import Count
+import CountPass
 
 report :: Handle -> Coverage -> IO ()
 report h cov =
@@ -76,7 +77,7 @@ reportMisses h (GroupCoverage _ count (Left (syms, recs, missing))) =
   mapM_ (rptMiss False) (tail missing) >>
   put (if ul then "</ul>" else "</p>")
   where put = hPutStr h
-        partial = countMissed count > length missing
+        partial = countMissed count > toInteger (length missing)
         tag = if partial then "First " else ""
         ul = length recs > 1
         rptMiss first e =
@@ -94,7 +95,7 @@ reportMisses h (GroupCoverage _ count (Right (brec, bads))) =
   mapM_ (rptMiss False) (tail bads) >>
   put "</p>"
   where put = hPutStr h
-        partial = countMissed count > length bads
+        partial = countMissed count > toInteger (length bads)
         tag = if partial then "First " else ""
         rptMiss first e =
           put $

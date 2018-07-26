@@ -1,8 +1,12 @@
+{-# Language CPP #-}
+
 module RangeList
   ( RangeList
   , rlLength
   , rlToList
   , rlEmpty
+  , rlMember
+  , rlRange
   , rlAdd
   ) where
 
@@ -19,6 +23,15 @@ rlToList rl = concat $ Map.foldrWithKey f [] (rlRanges rl)
 
 rlEmpty :: RangeList
 rlEmpty = RangeList 0 Map.empty
+
+rlMember :: Integer -> RangeList -> Bool
+rlMember n rl =
+  case Map.lookupLE n (rlRanges rl) of
+    Nothing -> False
+    Just (_, hi) -> n <= hi
+
+rlRange :: (Integer, Integer) -> RangeList
+rlRange rng = rlAdd rng rlEmpty
 
 rlAdd :: (Integer, Integer) -> RangeList -> RangeList
 rlAdd (low, high) rl =
@@ -50,7 +63,11 @@ flattenFinish (pairs, Nothing, size) =
 flattenFinish (pairs, Just (low, high), size) =
   RangeList
   (size + (high - low + 1))
+#if MIN_VERSION_containers(0,5,9)
   (Map.fromDescList ((low, high) : pairs))
+#else
+  (Map.fromAscList (reverse ((low, high) : pairs)))
+#endif
 
 flatten :: Map.Map Integer Integer -> RangeList
 flatten = flattenFinish . Map.foldlWithKey flattenUpd ([], Nothing, 0)

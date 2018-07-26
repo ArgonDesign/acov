@@ -10,7 +10,7 @@ import System.IO
 
 import qualified Raw
 import qualified Merge
-import qualified Count
+import qualified CountPass
 import Report
 
 import qualified Frontend
@@ -53,7 +53,7 @@ run args = do { mods <- Frontend.run (input args)
               ; mcov <- reportErr (Merge.mergeCoverage mods cov)
               ; createDirectoryIfMissing False (odir args)
               ; withFile (odir args </> "index.html") WriteMode
-                (\ h -> report h $ Count.run mcov)
+                (\ h -> report h $ CountPass.run mcov)
               ; exitSuccess
               }
 

@@ -38,7 +38,11 @@ data Expression = ExprSym Symbol
                 | ExprCond (Ranged Expression)
                   (Ranged Expression) (Ranged Expression)
 
-data Record = Record (Ranged Expression) (Ranged Symbol) (Maybe [Ranged VInt])
+data Record = Record
+              (Ranged Expression)
+              (Ranged Symbol)
+              (Maybe [(Ranged Integer, Ranged Integer)])
+
 data BitsRecord = BitsRecord (Ranged Expression) (Ranged P.Symbol)
 
 data Group = CrossGroup (SymbolTable ()) (Maybe (Ranged Expression)) [Record]
