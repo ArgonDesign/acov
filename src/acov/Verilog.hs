@@ -21,6 +21,18 @@ import qualified Parser as P
 import qualified Expressions as E
 import qualified Width as W
 
+fileHeader :: String
+fileHeader =
+  unlines [ "// AUTO-GENERATED FILE: Do not edit."
+          , ""
+          , "`default_nettype none"
+          , ""
+          ]
+
+fileFooter :: String
+fileFooter = "\n`default_nettype wire\n"
+
+
 showBitSel :: E.Slice -> String
 showBitSel (E.Slice a b) =
   if a == 0 && b == 0 then ""
@@ -42,56 +54,8 @@ showPorts entries = map draw $ zip names sels
         slice0 = E.Slice 0 0
         draw (sym, sel) = "input wire " ++ sel ++ " " ++ P.symName sym
 
-fileHeader :: String
-fileHeader =
-  unlines [ "// AUTO-GENERATED FILE: Do not edit."
-          , ""
-          , "`default_nettype none"
-          , ""
-          ]
-
-fileFooter :: String
-fileFooter = "`default_nettype wire\n"
-
-imports :: String
-imports =
-  unlines [ "  import \"DPI-C\" context acov_record1 ="
-          , "    function void acov_record1 (input string mod,"
-          , "                                input longint grp,"
-          , "                                input longint val);"
-          , "  import \"DPI-C\" context acov_record2 ="
-          , "    function void acov_record2 (input string mod,"
-          , "                                input longint grp,"
-          , "                                input longint val1,"
-          , "                                input longint val0);"
-          , "  import \"DPI-C\" context acov_record3 ="
-          , "    function void acov_record3 (input string mod,"
-          , "                                input longint grp,"
-          , "                                input longint val2,"
-          , "                                input longint val1,"
-          , "                                input longint val0);"
-          , "  import \"DPI-C\" context acov_record4 ="
-          , "    function void acov_record4 (input string mod,"
-          , "                                input longint grp,"
-          , "                                input longint val3,"
-          , "                                input longint val2,"
-          , "                                input longint val1,"
-          , "                                input longint val0);"
-          , ""
-          , "  import \"DPI-C\" function void acov_close ();"
-          , ""
-          , "  final acov_close ();"
-          , ""
-          ]
-
 beginModule :: Handle -> String -> SymbolTable (Ranged E.Slice) -> IO ()
 beginModule handle name ports =
-  assert (not $ null portStrs) $
-  print fileHeader >>
-  print start >>
-  print (head portStrs) >>
-  mapM_ (\ str -> print indent >> print str) (tail portStrs) >>
-  print ");\n\n" >>
   print imports
   where print = hPutStr handle
         start = "module " ++ name ++ "_coverage ("
@@ -170,12 +134,6 @@ writeWire handle syms (idx, grp) =
         width = W.grpWidth grp
         exprs = W.grpExprs grp
 
-startAlways :: Handle -> IO ()
-startAlways handle =
-  put "  always @(posedge clk or negedge rst_n) begin\n" >>
-  put "    if (rst_n) begin\n"
-  where put = hPutStr handle 
-
 startGuard :: Handle -> SymbolTable (Ranged E.Slice) ->
               [Ranged E.Expression] -> IO Bool
 startGuard _ _ [] = return False
@@ -228,28 +186,95 @@ writeGroup handle modname syms (idx, (guard, width)) =
   where put = hPutStr handle
         nwords = quot (width + 63) 64
 
-endModule :: Handle -> IO ()
-endModule handle = put "    end\n  end\nendmodule\n\n" >> put fileFooter
+imports :: String
+imports =
+  unlines [ "  import \"DPI-C\" context acov_record1 ="
+          , "    function void acov_record1 (input string mod,"
+          , "                                input longint grp,"
+          , "                                input longint val);"
+          , "  import \"DPI-C\" context acov_record2 ="
+          , "    function void acov_record2 (input string mod,"
+          , "                                input longint grp,"
+          , "                                input longint val1,"
+          , "                                input longint val0);"
+          , "  import \"DPI-C\" context acov_record3 ="
+          , "    function void acov_record3 (input string mod,"
+          , "                                input longint grp,"
+          , "                                input longint val2,"
+          , "                                input longint val1,"
+          , "                                input longint val0);"
+          , "  import \"DPI-C\" context acov_record4 ="
+          , "    function void acov_record4 (input string mod,"
+          , "                                input longint grp,"
+          , "                                input longint val3,"
+          , "                                input longint val2,"
+          , "                                input longint val1,"
+          , "                                input longint val0);"
+          , ""
+          , "  import \"DPI-C\" function void acov_close ();"
+          , ""
+          , "  final acov_close ();"
+          , ""
+          ]
+
+startAlways :: Handle -> IO ()
+startAlways handle =
+  put "  always @(posedge clk or negedge rst_n) begin\n" >>
+  put "    if (rst_n) begin\n"
   where put = hPutStr handle
 
-modName :: W.Module -> String
-modName = P.symName . rangedData . W.modName
+endAlways :: Handle -> IO ()
+endAlways h =
+  put "    end\n" >>
+  put "  end\n"
+  where put = hPutStr h
 
-writeModule :: W.Module -> Handle -> IO ()
-writeModule mod handle =
-  do { beginModule handle name syms
-     ; grps <- mapM (writeWire handle syms) (zip [0..] (W.modGroups mod))
-     ; startAlways handle
-     ; mapM_ (writeGroup handle name syms) (zip [0..] grps)
-     ; endModule handle
+printDPI :: Handle -> W.Module -> IO ()
+printDPI h mod =
+  do { hPutStr h imports
+     ; grps <- mapM (writeWire h syms) (zip [0..] (W.modGroups mod))
+     ; startAlways h
+     ; mapM_ (writeGroup h name syms) (zip [0..] grps)
+     ; endAlways h
      }
   where syms = W.modSyms mod
         name = modName mod
 
+printSVA :: Handle -> W.Module -> IO ()
+printSVA h _ =
+  hPutStr h "  // SVA backend not yet implemented.\n"
+
+modName :: W.Module -> String
+modName = P.symName . rangedData . W.modName
+
+-- Print the start and end of a module, wrapping a body printing
+-- function inside.
+printModule :: W.Module -> Handle -> IO ()
+printModule mod h =
+  do { print fileHeader
+     ; print start
+     ; print (head portStrs)
+     ; mapM_ (\ str -> print indent >> print str) (tail portStrs)
+     ; print ");\n\n"
+     ; print "`ifdef ACOV_SVA\n"
+     ; printSVA h mod
+     ; print "`else\n"
+     ; printDPI h mod
+     ; print "`endif\n"
+     ; print "endmodule\n\n"
+     ; print fileFooter
+     }
+  where print = hPutStr h
+        name = modName mod
+        start = "module " ++ name ++ "_coverage ("
+        indent = ",\n" ++ replicate (length start) ' '
+        ports = W.modSyms mod
+        portStrs = showPorts $ stAssocs ports
+
 dumpModule :: FilePath -> W.Module -> IO ()
 dumpModule dirname mod =
   withFile (dirname </> (modName mod ++ "_coverage.v")) WriteMode
-  (writeModule mod)
+  (printModule mod)
 
 run :: FilePath -> [W.Module] -> IO ()
 run dirname mods = createDirectoryIfMissing False dirname >>
