@@ -17,6 +17,7 @@ import Control.Exception.Base
 import Data.Bits
 import Data.List
 import qualified Data.Set as Set
+import qualified Data.Foldable as Foldable
 
 import Ranged
 import SymbolTable
@@ -75,7 +76,7 @@ showCounts thing (Counts tcnt vcnt) =
   set and cleared.
 -}
 cbHits :: Set.Set Integer -> (Integer, Integer)
-cbHits = foldr f (0, 0)
+cbHits = Foldable.foldr f (0, 0)
   where f val (ones, zeros) = (ones .|. val, zeros .|. (complement val))
 
 cbCount :: Int -> (Integer, Integer) -> Count
