@@ -61,6 +61,7 @@ Test-Suite test-acov
 executable acov
   main-is:             Main.hs
   other-modules:       Verilog
+                     , Printer
   build-depends:       base >=4.6.0.1 && <4.11
                      , array >= 0.4
                      , containers >= 0.5

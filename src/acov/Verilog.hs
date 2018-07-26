@@ -16,6 +16,7 @@ import Operators
 import Ranged
 import VInt
 import SymbolTable
+import Printer
 
 import qualified Parser as P
 import qualified Expressions as E
@@ -62,58 +63,15 @@ beginModule handle name ports =
         indent = ",\n" ++ replicate (length start) ' '
         portStrs = showPorts $ stAssocs ports
 
--- TODO: This doesn't know about associativity.
-parenthesize :: Int -> String -> Int -> String
-parenthesize this str that = if this <= that then "(" ++ str ++ ")" else str
-
 symName :: SymbolTable a -> Symbol -> String
 symName st sym = P.symName $ rangedData $ stNameAt sym st
-
-showExpression :: SymbolTable (Ranged E.Slice) -> Int -> Ranged E.Expression -> String
-showExpression syms that rexpr =
-  let (this, str) = showExpression' syms (rangedData rexpr) in
-    parenthesize this str that
-
-showExpression' :: SymbolTable (Ranged E.Slice) -> E.Expression -> (Int, String)
-
-showExpression' syms (E.ExprSym sym) = (100, symName syms sym)
-
-showExpression' _ (E.ExprInt vint) = (100, printVInt vint)
-
-showExpression' syms (E.ExprSel rsym ra rb) =
-  (100, symName syms (rangedData rsym) ++ "[" ++
-        se ra ++ (case rb of Nothing -> "]" ; Just rb' -> ":" ++ se rb' ++ "]"))
-  where se = showExpression syms 1
-
-showExpression' syms (E.ExprConcat re0 res) =
-  (100,
-   "{" ++ se re0 ++ concatMap (\ re -> ", " ++ se re) res ++ "}")
-  where se = showExpression syms 14
-
-showExpression' syms (E.ExprReplicate n re) =
-  (100, "{" ++ show n ++ "{" ++ showExpression syms 13 re ++ "}}")
-
-showExpression' syms (E.ExprUnOp ruo re) =
-  (prec, showUnOp uo ++ " " ++ showExpression syms prec re)
-  where uo = rangedData ruo
-        prec = unOpPrecedence uo
-
-showExpression' syms (E.ExprBinOp rbo ra rb) =
-  (prec, se ra ++ " " ++ showBinOp bo ++ " " ++ se rb)
-  where bo = rangedData rbo
-        prec = binOpPrecedence bo
-        se = showExpression syms prec
-
-showExpression' syms (E.ExprCond ra rb rc) =
-  (1, se ra ++ " ? " ++ se rb ++ " : " ++ se rc)
-  where se = showExpression syms 1
 
 showExpression64 :: Int -> SymbolTable (Ranged E.Slice) ->
                     Ranged E.Expression -> String
 showExpression64 w syms rexpr =
   if w /= 64 then "{" ++ show (64 - w) ++ "'b0, " ++ rest ++ "}"
   else rest
-  where rest = showExpression syms 0 rexpr
+  where rest = showExpression syms (rangedData rexpr)
 
 writeWire :: Handle -> SymbolTable (Ranged E.Slice) -> (Int, W.Group) ->
              IO ([Ranged E.Expression], Int)
@@ -126,7 +84,7 @@ writeWire handle syms (idx, grp) =
   put ";\n  assign " >>
   put name >>
   put " = " >>
-  put (snd $ showExpression' syms (E.ExprConcat (head exprs) (tail exprs))) >>
+  put (showExpression syms (E.ExprConcat (head exprs) (tail exprs))) >>
   put ";\n\n" >>
   return (W.grpGuards grp, width)
   where put = hPutStr handle
@@ -139,7 +97,7 @@ startGuard :: Handle -> SymbolTable (Ranged E.Slice) ->
 startGuard _ _ [] = return False
 startGuard handle syms guards =
   put "      if ((" >>
-  put (intercalate ") && (" (map (showExpression syms 0) guards)) >>
+  put (intercalate ") && (" (map (showExpression syms . rangedData) guards)) >>
   put ")) begin\n" >>
   return True
   where put = hPutStr handle
