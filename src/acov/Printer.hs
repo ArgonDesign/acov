@@ -1,6 +1,11 @@
 module Printer
-  ( showExpression
+  ( modName
+  , showExpression
+  , startAlways
+  , endAlways
   ) where
+
+import System.IO
 
 import Operators
 import Ranged
@@ -9,9 +14,13 @@ import VInt
 
 import qualified Parser as P
 import qualified Expressions as E
+import qualified Width as W
 
 -- TODO: This code doesn't know about associativity, so you get
 --       slightly more parentheses than you might want.
+
+modName :: W.Module -> String
+modName = P.symName . rangedData . W.modName
 
 symName :: SymbolTable a -> Symbol -> String
 symName st sym = P.symName $ rangedData $ stNameAt sym st
@@ -60,3 +69,15 @@ showExpression' syms (E.ExprCond ra rb rc) =
 
 showExpression :: SymbolTable (Ranged E.Slice) -> E.Expression -> String
 showExpression syms expr = snd $ showExpression' syms expr
+
+startAlways :: Handle -> IO ()
+startAlways handle =
+  put "  always @(posedge clk or negedge rst_n) begin\n" >>
+  put "    if (rst_n) begin\n"
+  where put = hPutStr handle
+
+endAlways :: Handle -> IO ()
+endAlways h =
+  put "    end\n" >>
+  put "  end\n"
+  where put = hPutStr h
