@@ -7,7 +7,6 @@ module Merge
   ) where
 
 import Ranged
-import SymbolTable
 
 import qualified Raw
 
@@ -64,8 +63,7 @@ mergeScope mod scope sd =
     (mapM mergeGrp $ zip (W.modGroups mod) (map (Raw.sdGetGroup sd) [0..]))
 
 data GroupCoverage =
-  GroupCoverage (Set.Set Integer)
-  (Either (SymbolTable (), [W.Record]) W.BitsRecord)
+  GroupCoverage (Set.Set Integer) (Either [W.Record] W.BitsRecord)
 
 checkWidth :: Int -> Integer -> Either String ()
 checkWidth w n =

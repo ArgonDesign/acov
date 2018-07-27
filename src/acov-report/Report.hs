@@ -8,7 +8,6 @@ import System.IO
 
 import Count
 import Ranged
-import SymbolTable
 import Time (stringTime)
 
 import Parser (symName)
@@ -50,15 +49,15 @@ reportScope h multiScope sc =
      }
   where put = hPutStr h
 
-showMiss :: SymbolTable () -> [Integer] -> String
-showMiss st vals =
+showMiss :: [W.Record] -> [Integer] -> String
+showMiss recs vals =
   assert (not $ null vals) $
   if length vals == 1 then show (head vals)
   else
     assert (length names == length vals) $
     intercalate ", " $
     map (\ (n, v) -> n ++ "=" ++ show v) (zip names vals)
-  where names = map (symName . rangedData . fst) (stAssocs st)
+  where names = map (symName . rangedData . W.recSym) recs
 
 showMissBit :: (Int, Bool) -> String
 showMissBit (i, b) = "bit " ++ show i ++ (if b then " set" else " clear")
@@ -67,7 +66,7 @@ wrapTag :: String -> String -> String
 wrapTag tag str = "<" ++ tag ++ ">" ++ str ++ "</" ++ tag ++ ">"
 
 reportMisses :: Handle -> GroupCoverage -> IO ()
-reportMisses h (GroupCoverage _ count (Left (syms, recs, missing))) =
+reportMisses h (GroupCoverage _ count (Left (recs, missing))) =
   assert (not $ null $ missing) $
   put ("<p>" ++ tag ++ show (length missing) ++
         " misses:</p>" ++
@@ -82,9 +81,9 @@ reportMisses h (GroupCoverage _ count (Left (syms, recs, missing))) =
         ul = length recs > 1
         rptMiss first e =
           put $
-          if ul then wrapTag "li" $ showMiss syms e
-          else if first then wrapTag "span" $ showMiss syms e
-          else ", " ++ (wrapTag "span" $ showMiss syms e)
+          if ul then wrapTag "li" $ showMiss recs e
+          else if first then wrapTag "span" $ showMiss recs e
+          else ", " ++ (wrapTag "span" $ showMiss recs e)
 
 reportMisses h (GroupCoverage _ count (Right (brec, bads))) =
   assert (not $ null $ bads) $

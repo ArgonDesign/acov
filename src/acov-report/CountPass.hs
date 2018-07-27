@@ -15,7 +15,6 @@ import qualified Data.Foldable as Foldable
 import Count
 import Cross
 import Ranged
-import SymbolTable
 
 import qualified Merge as M
 import qualified Width as W
@@ -53,7 +52,7 @@ data GroupCoverage =
   GroupCoverage { gcVals :: Set.Set Integer
                 , gcCount :: Count
                 , gcBody :: Either
-                            (SymbolTable (), [W.Record], [[Integer]])
+                            ([W.Record], [[Integer]])
                             (W.BitsRecord, [(Int, Bool)])
                 }
 
@@ -64,8 +63,8 @@ data GroupCoverage =
 -}
 countGroup :: M.GroupCoverage -> GroupCoverage
 
-countGroup (M.GroupCoverage gvals (Left (st, recs))) =
-  GroupCoverage gvals cnt (Left (st, recs, misses))
+countGroup (M.GroupCoverage gvals (Left recs)) =
+  GroupCoverage gvals cnt (Left (recs, misses))
   where cnt = crossCount gvals cross
         cross = mkCross $ map (\ r -> (W.recWidth r, W.recClist r)) recs
         nToTake = fromInteger (min (countMissed cnt) 10)
@@ -79,11 +78,10 @@ countGroup (M.GroupCoverage gvals (Right brec)) =
         bads = take 10 $ cbMissing w oz
 
 gcName :: GroupCoverage -> String
-gcName (GroupCoverage _ _ (Left (syms, recs, _))) =
+gcName (GroupCoverage _ _ (Left (recs, _))) =
   if length recs == 1 then recName (head recs)
   else intercalate ", " (map recName recs)
-  where recName r = symName $ rangedData $
-                    stNameAt (rangedData (W.recSym r)) syms
+  where recName = symName . rangedData . W.recSym
 gcName (GroupCoverage _ _ (Right (brec, _))) =
   (symName $ rangedData $ W.brSym brec) ++ " bits"
 

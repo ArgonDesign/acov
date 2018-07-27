@@ -16,8 +16,7 @@ import qualified Expressions as E
 import qualified Parser as P
 
 type PortSyms = SymbolTable (Ranged E.Slice)
-type RecSyms = SymbolTable ()
-type GrpBody = Either (SymbolTable (), [W.Record]) W.BitsRecord
+type GrpBody = Either [W.Record] W.BitsRecord
 
 printModule :: Handle -> W.Module -> IO ()
 printModule h mod = mapM_ (writeGroup h syms) (zip [0..] grps)
@@ -48,8 +47,8 @@ showSlice w = if w == 1 then ""
 
 prepGroup :: Handle -> PortSyms -> Int -> GrpBody -> IO ()
 
-prepGroup h syms idx (Left (recSyms, recs)) =
-  mapM_ (writeRecWire h syms idx recSyms) recs
+prepGroup h syms idx (Left recs) =
+  mapM_ (writeRecWire h syms idx) recs
 
 prepGroup h syms idx (Right brec) =
   do { put ("  wire " ++ showSlice width ++ wireBase ++ " = " ++
@@ -64,11 +63,11 @@ prepGroup h syms idx (Right brec) =
 
 writeRecs :: Handle -> PortSyms -> Int -> GrpBody -> IO ()
 
-writeRecs h syms idx (Left (recSyms, recs)) =
-  mapM_ (writeRecCP h syms idx recSyms) recs >>
+writeRecs h syms idx (Left recs) =
+  mapM_ (writeRecCP h syms idx) recs >>
   if not $ null $ tail recs then
     hPutStr h ("    cross " ++
-               intercalate ", " (map (recName recSyms) recs) ++ ";\n")
+               intercalate ", " (map recName recs) ++ ";\n")
   else
     return ()
 
@@ -80,29 +79,29 @@ writeRecs h syms idx (Right brec) = mapM_ f [0..(width - 1)]
         name = P.symName $ rangedData $ W.brSym brec
         wireBase = "acov_grp_" ++ show idx
 
-recName :: RecSyms -> W.Record -> String
-recName syms record = symName syms (rangedData (W.recSym record))
+recName :: W.Record -> String
+recName = P.symName . rangedData . W.recSym
 
-wireName :: Int -> RecSyms -> W.Record -> String
-wireName grpIdx syms record =
-  "acov_grp_" ++ show grpIdx ++ "_" ++ recName syms record
+wireName :: Int -> W.Record -> String
+wireName grpIdx record =
+  "acov_grp_" ++ show grpIdx ++ "_" ++ recName record
 
-writeRecWire :: Handle -> PortSyms -> Int -> RecSyms -> W.Record -> IO ()
-writeRecWire h pST grpIdx rST record =
+writeRecWire :: Handle -> PortSyms -> Int -> W.Record -> IO ()
+writeRecWire h pST grpIdx record =
   hPutStr h ("  wire " ++ showSlice width ++ name ++ " = " ++ value ++ ";\n")
   where width = W.recWidth record
-        name = wireName grpIdx rST record
+        name = wireName grpIdx record
         value = showExpression pST (rangedData (W.recExpr record))
 
-writeRecCP :: Handle -> PortSyms -> Int -> RecSyms -> W.Record -> IO ()
-writeRecCP h pST grpIdx rST record =
+writeRecCP :: Handle -> PortSyms -> Int -> W.Record -> IO ()
+writeRecCP h pST grpIdx record =
   put ("    " ++ recname ++ ": coverpoint " ++ wirename ++ " {\n") >>
   put ("      bins x[] = {" ++ bins ++ "};\n") >>
   put ("    }\n")
   where put = hPutStr h
-        recname = recName rST record
-        wirename = wireName grpIdx rST record
-        name = wireName grpIdx rST record
+        recname = recName record
+        wirename = wireName grpIdx record
+        name = wireName grpIdx record
         bins = intercalate ", " $ map showIVL $ rlIntervals $ W.recClist record
         showIVL (lo, hi) = if lo == hi then show lo
                            else "[" ++ show lo ++ ":" ++ show hi ++ "]"

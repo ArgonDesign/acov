@@ -40,14 +40,14 @@ data Expression = ExprSym Symbol
 
 data Record = Record
               (Ranged Expression)
-              (Ranged Symbol)
+              (Ranged P.Symbol)
               (Maybe [(Ranged Integer, Ranged Integer)])
 
 data BitsRecord = BitsRecord (Ranged Expression) (Ranged P.Symbol)
 
 data Group = Group
              [Ranged Expression]
-             (Either (SymbolTable (), [Record]) BitsRecord)
+             (Either [Record] BitsRecord)
 
 data Slice = Slice Int Int
 
@@ -139,11 +139,11 @@ tightenBitsRecord (S.BitsRecord expr name) =
   (\ e -> BitsRecord e name) <$> tighten expr
 
 tightenGroup :: S.Group -> ErrorsOr Group
-tightenGroup (S.Group guards (Left (st, recs))) =
+tightenGroup (S.Group guards (Left recs)) =
   do { (guards', recs') <- liftA2 (,)
                            (mapEO tighten guards)
                            (mapEO tightenRecord recs)
-     ; return $ Group guards' $ Left (st, recs')
+     ; return $ Group guards' $ Left recs'
      }
 
 tightenGroup (S.Group guards (Right brec)) =

@@ -49,14 +49,14 @@ data Expression = ExprAtom Atom
 
 data Record = Record
               (Ranged Expression)
-              (Ranged Symbol)
+              (Ranged P.Symbol)
               (Maybe [(Ranged Integer, Ranged Integer)])
 
 data BitsRecord = BitsRecord (Ranged Expression) (Ranged P.Symbol)
 
 data Group = Group
              [Ranged Expression]
-             (Either (SymbolTable (), [Record]) BitsRecord)
+             (Either [Record] BitsRecord)
 
 type PortSyms = SymbolTable (Maybe (Ranged P.Slice))
 
@@ -159,8 +159,7 @@ takeRecord :: PortSyms -> (STBuilder (), [Record]) -> G.Record ->
 takeRecord ps (stb, recs) (G.Record expr as cover) =
   do { (expr', psym) <- liftA2 (,) (readExpression ps expr) (getRecName expr as)
      ; stb' <- stbAdd "record name" stb (rangedRange psym) psym ()
-     ; let as' = copyRange psym (stbLastSymbol stb')
-     ; good $ (stb', Record expr' as' cover : recs)
+     ; good $ (stb', Record expr' psym cover : recs)
      }
 
 readBitRecord :: PortSyms -> G.BitsRecord -> ErrorsOr BitsRecord
@@ -173,7 +172,7 @@ readGroup ps (G.Group guards (Left recs)) =
   do { (guards', (stb, recs')) <- liftA2 (,)
                                   (mapEO (readExpression ps) guards)
                                   (foldEO (takeRecord ps) (stbEmpty, []) recs)
-     ; return $ Group guards' $ Left (stbToSymbolTable stb, reverse recs')
+     ; return $ Group guards' $ Left $ reverse recs'
      }
 
 readGroup ps (G.Group guards (Right brec)) =

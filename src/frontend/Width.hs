@@ -32,7 +32,7 @@ import RangeList
   width of recorded expressions.
 -}
 data Record = Record { recExpr :: Ranged E.Expression
-                     , recSym :: Ranged Symbol
+                     , recSym :: Ranged P.Symbol
                      , recClist :: RangeList
                      , recWidth :: Int
                      }
@@ -44,14 +44,14 @@ data BitsRecord = BitsRecord { brExpr :: Ranged E.Expression
 
 data Group = Group
              [Ranged E.Expression]
-             (Either (SymbolTable (), [Record]) BitsRecord)
+             (Either [Record] BitsRecord)
 
 grpWidth :: Group -> Int
-grpWidth (Group _ (Left (_, recs))) = sum $ map recWidth recs
+grpWidth (Group _ (Left recs)) = sum $ map recWidth recs
 grpWidth (Group _ (Right brec)) = brWidth brec
 
 grpExprs :: Group -> [Ranged E.Expression]
-grpExprs (Group _ (Left (_, recs))) = map recExpr recs
+grpExprs (Group _ (Left recs)) = map recExpr recs
 grpExprs (Group _ (Right brec)) = [brExpr brec]
 
 grpGuards :: Group -> [Ranged E.Expression]
@@ -298,11 +298,11 @@ checkGuard symST guard =
      }
 
 readGroup :: SymbolTable (Ranged E.Slice) -> E.Group -> ErrorsOr Group
-readGroup symST (E.Group guards (Left (recST, recs))) =
+readGroup symST (E.Group guards (Left recs)) =
   do { recs' <- snd <$> (liftA2 (,)
                          (mapEO (checkGuard symST) guards)
                          (mapEO (takeRec symST) recs))
-     ; return $ Group guards $ Left (recST, recs')
+     ; return $ Group guards $ Left recs'
      }
 
 readGroup symST (E.Group guards (Right (E.BitsRecord expr name))) =
