@@ -3,6 +3,7 @@
 module RangeList
   ( RangeList
   , rlLength
+  , rlIntervals
   , rlToList
   , rlEmpty
   , rlMember
@@ -20,6 +21,9 @@ data RangeList = RangeList { rlLength :: Integer
 rlToList :: RangeList -> [Integer]
 rlToList rl = concat $ Map.foldrWithKey f [] (rlRanges rl)
   where f lo hi ranges = [lo..hi] : ranges
+
+rlIntervals :: RangeList -> [(Integer, Integer)]
+rlIntervals = Map.toAscList . rlRanges
 
 rlEmpty :: RangeList
 rlEmpty = RangeList 0 Map.empty

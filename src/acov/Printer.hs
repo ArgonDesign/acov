@@ -1,5 +1,6 @@
 module Printer
   ( modName
+  , symName
   , showExpression
   , startAlways
   , endAlways

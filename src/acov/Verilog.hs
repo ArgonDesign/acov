@@ -17,6 +17,7 @@ import SymbolTable
 import Printer
 
 import qualified DPI
+import qualified SVA
 
 import qualified Parser as P
 import qualified Expressions as E
@@ -55,10 +56,6 @@ showPorts entries = map draw $ zip names sels
         slice0 = E.Slice 0 0
         draw (sym, sel) = "input wire " ++ sel ++ " " ++ P.symName sym
 
-printSVA :: Handle -> W.Module -> IO ()
-printSVA h _ =
-  hPutStr h "  // SVA backend not yet implemented.\n"
-
 -- Print the start and end of a module, wrapping a body printing
 -- function inside.
 printModule :: W.Module -> Handle -> IO ()
@@ -68,10 +65,10 @@ printModule mod h =
      ; print (head portStrs)
      ; mapM_ (\ str -> print indent >> print str) (tail portStrs)
      ; print ");\n\n"
-     ; print "`ifdef ACOV_SVA\n"
-     ; printSVA h mod
-     ; print "`else\n"
+     ; print "`ifndef ACOV_SVA\n"
      ; DPI.printModule h mod
+     ; print "`else\n"
+     ; SVA.printModule h mod
      ; print "`endif\n"
      ; print "endmodule\n\n"
      ; print fileFooter
