@@ -18,12 +18,33 @@
 #include <svdpi.h>
 
 namespace {
+    typedef std::set<uint64_t>    values1_t;
+    typedef std::set<std::string> valuesn_t;
+
+    typedef std::map<uint64_t, values1_t> map1_t;
+    typedef std::map<uint64_t, valuesn_t> mapn_t;
+
+    // The map for a given scope, from group index to values seen.
+    struct scope_map_t
+    {
+        // Used for records of <= 64 bits
+        map1_t map1_;
+        // Used for records of > 64 bits
+        mapn_t mapn_;
+    };
+
     struct recorder_t
     {
-        void record (const char        *scope,
-                     uint64_t           modname,
-                     uint64_t           grp,
-                     const std::string &value);
+        void record1 (const char        *scope,
+                      uint64_t           modname,
+                      uint64_t           grp,
+                      uint64_t           value);
+
+        void recordn (const char        *scope,
+                      uint64_t           modname,
+                      uint64_t           grp,
+                      const std::string &value);
+
         void flush () const;
 
     private:
@@ -32,7 +53,6 @@ namespace {
         typedef std::set<std::string> values_t;
 
         // We store module -> scope -> grp -> values
-        typedef std::map<uint64_t, values_t>      scope_map_t;
         typedef std::map<scope_t, scope_map_t>    module_map_t;
         typedef std::map<modname_t, module_map_t> map_t;
 
@@ -40,14 +60,24 @@ namespace {
     };
 }
 
-void recorder_t::record (const char        *scope,
-                         uint64_t           modname,
-                         uint64_t           grp,
-                         const std::string &value)
+void recorder_t::record1 (const char        *scope,
+                          uint64_t           modname,
+                          uint64_t           grp,
+                          uint64_t           value)
 {
     if (! scope) scope = "<NO SCOPE>";
 
-    data_ [modname][scope][grp].insert (value);
+    data_ [modname][scope].map1_ [grp].insert (value);
+}
+
+void recorder_t::recordn (const char        *scope,
+                          uint64_t           modname,
+                          uint64_t           grp,
+                          const std::string &value)
+{
+    if (! scope) scope = "<NO SCOPE>";
+
+    data_ [modname][scope].mapn_ [grp].insert (value);
 }
 
 static void
@@ -99,12 +129,29 @@ void recorder_t::flush () const
              ++ it1) {
             ofile << "SCOPE: " << it1 -> first << "\n";
 
-            for (scope_map_t::const_iterator it2 = it1->second.begin ();
-                 it2 != it1->second.end ();
+            // <= 64-bit records
+            for (map1_t::const_iterator it2 = it1->second.map1_.begin ();
+                 it2 != it1->second.map1_.end ();
                  ++ it2) {
                 ofile << it2->first << ": {";
                 bool first = true;
-                for (values_t::const_iterator it3 = it2->second.begin ();
+                for (values1_t::const_iterator it3 = it2->second.begin ();
+                     it3 != it2->second.end ();
+                     ++ it3) {
+                    if (! first) ofile << ", ";
+                    first = false;
+                    ofile << * it3;
+                }
+                ofile << "}\n";
+            }
+
+            // > 64-bit records
+            for (mapn_t::const_iterator it2 = it1->second.mapn_.begin ();
+                 it2 != it1->second.mapn_.end ();
+                 ++ it2) {
+                ofile << it2->first << ": {";
+                bool first = true;
+                for (valuesn_t::const_iterator it3 = it2->second.begin ();
                      it3 != it2->second.end ();
                      ++ it3) {
                     if (! first) ofile << ", ";
@@ -168,31 +215,31 @@ static std::string ll_to_str (long long value)
 extern "C" {
     void acov_record1 (long long modname, long long grp, long long value) {
         const char *scope = svGetNameFromScope (svGetScope ());
-        get_recorder ()->record (scope, modname, grp, ll_to_str (value));
+        get_recorder ()->record1 (scope, modname, grp, value);
     }
 
     void acov_record2 (long long modname, long long grp,
                        long long value1, long long value0) {
         const char *scope = svGetNameFromScope (svGetScope ());
-        get_recorder ()->record (scope, modname, grp,
-                                 ll_to_str (value1) + ll_to_str (value0));
+        get_recorder ()->recordn (scope, modname, grp,
+                                  ll_to_str (value1) + ll_to_str (value0));
     }
 
     void acov_record3 (long long modname, long long grp,
                        long long value2, long long value1, long long value0) {
         const char *scope = svGetNameFromScope (svGetScope ());
-        get_recorder ()->record (scope, modname, grp,
-                                 ll_to_str (value2) + ll_to_str (value1) +
-                                 ll_to_str (value0));
+        get_recorder ()->recordn (scope, modname, grp,
+                                  ll_to_str (value2) + ll_to_str (value1) +
+                                  ll_to_str (value0));
     }
 
     void acov_record4 (long long modname, long long grp,
                        long long value3, long long value2,
                        long long value1, long long value0) {
         const char *scope = svGetNameFromScope (svGetScope ());
-        get_recorder ()->record (scope, modname, grp,
-                                 ll_to_str (value3) + ll_to_str (value2) +
-                                 ll_to_str (value1) + ll_to_str (value0));
+        get_recorder ()->recordn (scope, modname, grp,
+                                  ll_to_str (value3) + ll_to_str (value2) +
+                                  ll_to_str (value1) + ll_to_str (value0));
     }
 
     void acov_open (long long hash) {
