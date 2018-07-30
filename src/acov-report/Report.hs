@@ -33,16 +33,23 @@ report h cov =
 reportMod :: Handle -> ModCoverage -> IO ()
 reportMod h mc =
   do { put $ "<h2>Module " ++ (mcName mc) ++ "</h2>"
-     ; if multiScope then put (showCounts "scopes" (mcCounts mc))
-       else return ()
-     ; mapM_ (reportScope h multiScope) (mcScopes mc)
+     ; if null scopes then
+         put "<p>No scopes seen.</p>"
+       else
+         let singleScope = null (tail scopes) in
+           do { if not singleScope then
+                  put (showCounts "scopes" (mcCounts mc))
+                else
+                  return ()
+              ; mapM_ (reportScope h singleScope) scopes
+              }
      }
   where put = hPutStr h
-        multiScope = not $ null $ tail (mcScopes mc)
+        scopes = mcScopes mc
 
 reportScope :: Handle -> Bool -> ScopeCoverage -> IO ()
-reportScope h multiScope sc =
-  do { if multiScope then put ("<h3>" ++ (scName sc) ++ "</h3>")
+reportScope h singleScope sc =
+  do { if not singleScope then put ("<h3>" ++ (scName sc) ++ "</h3>")
        else return ()
      ; put (showCounts "groups" (scCounts sc))
      ; mapM_ (reportGrp h) (scGroups sc)
