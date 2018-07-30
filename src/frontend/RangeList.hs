@@ -13,10 +13,14 @@ module RangeList
 
 import Control.Exception.Base
 import qualified Data.Map.Strict as Map
+import Data.Hashable
 
 data RangeList = RangeList { rlLength :: Integer
                            , rlRanges :: Map.Map Integer Integer
                            }
+
+instance Hashable RangeList where
+  hashWithSalt n rl = hashWithSalt n $ Map.toAscList $ rlRanges rl
 
 rlToList :: RangeList -> [Integer]
 rlToList rl = concat $ Map.foldrWithKey f [] (rlRanges rl)

@@ -49,7 +49,7 @@ hi-relpaths-for = \
   $(patsubst $(BUILD)/build/$(1)/$(1)-tmp/%,%,$(call hi-files-for,$(1)))
 hs-for = $(patsubst %.hi,src/$(1)/%.hs,$(call hi-relpaths-for,$(1)))
 
-hi-files-top = $(wildcard $(BUILD)/build/*.hi)
+hi-files-top = $(filter-out %,BuildVersion.hi,$(wildcard $(BUILD)/build/*.hi))
 hi-relpaths-top = $(patsubst $(BUILD)/build/%,%,$(hi-files-top))
 hs-top = $(patsubst %.hi,src/frontend/%.hs,$(hi-relpaths-top))
 

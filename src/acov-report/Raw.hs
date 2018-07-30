@@ -24,6 +24,7 @@ import Data.Maybe
 import Data.Monoid ((<>))
 import qualified Data.Set as Set
 
+import Numeric (showHex)
 import System.IO
 
 import Text.Parsec
@@ -137,10 +138,15 @@ parseRecord = do { g <- parseGrp
 statement :: Parser Statement
 statement = (parseMod <|> parseScope <|> parseRecord) <?> "statement"
 
-script :: Parser [Statement]
-script = T.whiteSpace lexer >> (many1 statement) <* eof
+script :: Parser (Integer, [Statement])
+script = do { T.whiteSpace lexer
+            ; hash <- hex
+            ; stmts <- many1 statement
+            ; eof
+            ; return (hash, stmts)
+            }
 
-parseScript :: SourceName -> String -> Either String [Statement]
+parseScript :: SourceName -> String -> Either String (Integer, [Statement])
 parseScript name contents =
   case parse script name contents of
     Left err ->
@@ -149,7 +155,7 @@ parseScript name contents =
       showErrorMessages "or" "unknown parse error"
                         "expecting" "unexpected" "end of input"
                         (errorMessages err)
-    Right stmts -> Right stmts
+    Right res -> Right res
 
 {-
   Now we know how to parse a script into a list of statements, we can
@@ -207,23 +213,29 @@ updGrp :: IntegerSet -> Maybe IntegerSet -> IntegerSet
 updGrp vals Nothing = vals
 updGrp vals (Just vals') = vals <> vals'
 
-takeScript :: Coverage -> [Statement] -> Either String Coverage
-takeScript cov stmts =
-  do { cov' <- snd <$> foldM takeStatement ((Nothing, Nothing), cov) stmts
+takeScript :: Coverage -> Int ->
+              (Integer, [Statement]) -> Either String Coverage
+takeScript cov hash (hash', stmts) =
+  do { if toInteger hash /= hash' then
+         Left ("Hash code in file is 0x" ++ showHex hash' "" ++
+               ", which doesn't match the expected 0x" ++ showHex hash "" ++
+               ".")
+       else
+         Right ()
+     ; cov' <- snd <$> foldM takeStatement ((Nothing, Nothing), cov) stmts
      ; return $ cov' { covCount = covCount cov + 1 }
      }
 
-takeContents :: Coverage -> FilePath -> String -> Either String Coverage
-takeContents cov path contents =
-  case parseScript path contents >>= takeScript cov of
-    Left err -> Left $
-                show path ++ ": " ++ err
-    Right cov' -> Right cov'
+takeContents :: Coverage -> Int -> FilePath -> String -> (Coverage, Maybe String)
+takeContents cov hash path contents =
+  case parseScript path contents >>= takeScript cov hash of
+    Left err -> (cov, Just $ show path ++ ": Ignoring file. " ++ err)
+    Right cov' -> (cov', Nothing)
 
-updateCoverage :: Coverage -> FilePath -> IO (Either String Coverage)
-updateCoverage cov path =
+updateCoverage :: Coverage -> Int -> FilePath -> IO (Coverage, Maybe String)
+updateCoverage cov hash path =
   do { res <- (CE.try $ readFile path) :: IO (Either CE.IOException String)
      ; return $ case res of
-         Left err -> Left $ show err
-         Right str -> takeContents cov path str
+         Left err -> (cov, Just $ show err)
+         Right str -> takeContents cov hash path str
      }

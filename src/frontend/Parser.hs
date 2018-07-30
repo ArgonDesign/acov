@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveGeneric #-}
+
 module Parser
   ( Symbol(..)
   , symName
@@ -19,7 +21,9 @@ import Control.Applicative ((<*))
 import Data.Char (digitToInt)
 import Data.Functor ((<$>))
 import Data.Functor.Identity (Identity)
+import Data.Hashable
 import Data.Maybe (fromMaybe)
+import GHC.Generics (Generic)
 import qualified Text.Parsec.Language as L
 import qualified Text.Parsec.Token as T
 import Text.Parsec
@@ -54,10 +58,12 @@ import VInt
 
 -}
 newtype Symbol = Symbol String
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Generic)
 
 symName :: Symbol -> String
 symName (Symbol name) = name
+
+instance Hashable Symbol
 
 data Module = Module (Ranged Symbol) [Ranged Port] [Ranged Statement]
 

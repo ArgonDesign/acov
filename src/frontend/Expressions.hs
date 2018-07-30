@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveGeneric #-}
+
 module Expressions
   ( run
   , Expression(..)
@@ -10,8 +12,10 @@ module Expressions
   ) where
 
 import Control.Applicative
+import Data.Hashable
 import Data.Maybe
 import qualified Data.Map.Strict as Map
+import GHC.Generics (Generic)
 
 import qualified Symbols as S
 import qualified Parser as P
@@ -37,6 +41,9 @@ data Expression = ExprSym Symbol
                   (Ranged Expression) (Ranged Expression)
                 | ExprCond (Ranged Expression)
                   (Ranged Expression) (Ranged Expression)
+  deriving Generic
+
+instance Hashable Expression
 
 data Record = Record
               (Ranged Expression)
@@ -50,6 +57,9 @@ data Group = Group
              (Either [Record] BitsRecord)
 
 data Slice = Slice Int Int
+  deriving Generic
+
+instance Hashable Slice
 
 type PortSyms = SymbolTable (Ranged Slice)
 

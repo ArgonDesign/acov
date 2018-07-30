@@ -35,24 +35,29 @@ mainInfo = info (mainArgs <**> helper)
              header ("acov-report (" ++ gitDescribe ++
                      ") - functional coverage reporter") )
 
-reportErr :: Either String a -> IO a
-reportErr (Left err) = hPutStr stderr ("Error: " ++ err ++ "\n") >>
-                       exitFailure
-reportErr (Right a) = return a
+reportRecov :: (Raw.Coverage, Maybe String) -> IO Raw.Coverage
+reportRecov (cov, Just str) = hPutStr stderr ("Warning: " ++ str ++ "\n") >>
+                            return cov
+reportRecov (cov, Nothing) = return cov
 
-readCoverage :: IO Raw.Coverage
-readCoverage =
+reportFatal :: Either String a -> IO a
+reportFatal (Left err) = hPutStr stderr ("Error: " ++ err ++ "\n") >>
+                       exitFailure
+reportFatal (Right a) = return a
+
+readCoverage :: Int -> IO Raw.Coverage
+readCoverage hash =
   do { paths <- words <$> getContents
      ; if null paths then hPutStr stderr "Warning: No coverage files.\n"
        else return ()
      ; foldM f Raw.emptyCoverage paths
      }
-  where f cov path = Raw.updateCoverage cov path >>= reportErr
+  where f cov path = Raw.updateCoverage cov hash path >>= reportRecov
 
 run :: Args -> IO ()
-run args = do { mods <- Frontend.run (input args)
-              ; cov <- readCoverage
-              ; mcov <- reportErr (Merge.mergeCoverage mods cov)
+run args = do { (hash, mods) <- Frontend.run (input args)
+              ; cov <- readCoverage hash
+              ; mcov <- reportFatal (Merge.mergeCoverage mods cov)
               ; createDirectoryIfMissing False (odir args)
               ; withFile (odir args </> "index.html") WriteMode
                 (\ h -> report h $ CountPass.run mcov)

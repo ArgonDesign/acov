@@ -75,6 +75,10 @@ write_value (std::ofstream &ofile, const std::string &bytes)
     }
 }
 
+static bool        hash_valid;
+static long long   saved_hash;
+static recorder_t *recorder;
+
 void recorder_t::flush () const
 {
     std::ofstream ofile ("acov.log");
@@ -84,6 +88,7 @@ void recorder_t::flush () const
     }
 
     ofile << std::hex;
+    ofile << saved_hash << "\n";
 
     for (map_t::const_iterator it0 = data_.begin ();
          it0 != data_.end ();
@@ -113,15 +118,32 @@ void recorder_t::flush () const
     }
 }
 
-static recorder_t *recorder;
-
 static recorder_t *get_recorder () throw()
 {
     if (recorder)
         return recorder;
 
+    if (! hash_valid) {
+        std::cerr << "Error: Instantiating recorder before setting hash.\n";
+    }
+
     recorder = new recorder_t;
     return recorder;
+}
+
+static void open (long long hash) throw()
+{
+    if (hash_valid && saved_hash != hash) {
+        std::ios::fmtflags flags = std::cerr.flags ();
+        std::cerr << "Error: Overriding existing hash (0x"
+                  << std::hex << saved_hash
+                  << ") with 0x"
+                  << hash << ".\n";
+        std::cerr.flags (flags);
+    }
+
+    hash_valid = true;
+    saved_hash = hash;
 }
 
 static void close () throw ()
@@ -172,6 +194,10 @@ extern "C" {
         get_recorder ()->record (scope, modname, grp,
                                  ll_to_str (value3) + ll_to_str (value2) +
                                  ll_to_str (value1) + ll_to_str (value0));
+    }
+
+    void acov_open (long long hash) {
+        open (hash);
     }
 
     void acov_close () {

@@ -58,15 +58,15 @@ showPorts entries = map draw $ zip names sels
 
 -- Print the start and end of a module, wrapping a body printing
 -- function inside.
-printModule :: W.Module -> Handle -> IO ()
-printModule mod h =
+printModule :: Int -> W.Module -> Handle -> IO ()
+printModule hash mod h =
   do { print fileHeader
      ; print start
      ; print (head portStrs)
      ; mapM_ (\ str -> print indent >> print str) (tail portStrs)
      ; print ");\n\n"
      ; print "`ifndef ACOV_SVA\n"
-     ; DPI.printModule h mod
+     ; DPI.printModule h hash mod
      ; print "`else\n"
      ; SVA.printModule h mod
      ; print "`endif\n"
@@ -80,11 +80,11 @@ printModule mod h =
         ports = W.modSyms mod
         portStrs = showPorts $ stAssocs ports
 
-dumpModule :: FilePath -> W.Module -> IO ()
-dumpModule dirname mod =
+dumpModule :: FilePath -> Int -> W.Module -> IO ()
+dumpModule dirname hash mod =
   withFile (dirname </> (modName mod ++ "_coverage.v")) WriteMode
-  (printModule mod)
+  (printModule hash mod)
 
-run :: FilePath -> [W.Module] -> IO ()
-run dirname mods = createDirectoryIfMissing False dirname >>
-                   mapM_ (dumpModule dirname) mods
+run :: FilePath -> (Int, [W.Module]) -> IO ()
+run dirname (hash, mods) = createDirectoryIfMissing False dirname >>
+                           mapM_ (dumpModule dirname hash) mods

@@ -6,6 +6,8 @@ import Control.Exception.Base
 import Data.List
 import System.IO
 
+import Numeric (showHex)
+
 import Printer
 import Ranged
 import SymbolTable
@@ -13,9 +15,9 @@ import SymbolTable
 import qualified Width as W
 import qualified Expressions as E
 
-printModule :: Handle -> W.Module -> IO ()
-printModule h mod =
-  do { hPutStr h imports
+printModule :: Handle -> Int -> W.Module -> IO ()
+printModule h hash mod =
+  do { hPutStr h (imports hash)
      ; grps <- mapM (writeWire h syms) (zip [0..] (W.modGroups mod))
      ; startAlways h
      ; mapM_ (writeGroup h name syms) (zip [0..] grps)
@@ -24,8 +26,8 @@ printModule h mod =
   where syms = W.modSyms mod
         name = modName mod
 
-imports :: String
-imports =
+imports :: Int -> String
+imports hash =
   unlines [ "  import \"DPI-C\" context acov_record1 ="
           , "    function void acov_record1 (input string mod,"
           , "                                input longint grp,"
@@ -49,8 +51,10 @@ imports =
           , "                                input longint val1,"
           , "                                input longint val0);"
           , ""
+          , "  import \"DPI-C\" function void acov_open (input longint hash);"
           , "  import \"DPI-C\" function void acov_close ();"
           , ""
+          , "  initial acov_open (64'h" ++ showHex hash "" ++ ");"
           , "  final acov_close ();"
           , ""
           ]

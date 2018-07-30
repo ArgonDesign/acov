@@ -12,7 +12,7 @@ import qualified Width
 runPass :: FilePath -> (a -> ErrorsOr b) -> a -> IO b
 runPass path pass a = reportEO path (pass a)
 
-run :: FilePath -> IO [Width.Module]
+run :: FilePath -> IO (Int, [Width.Module])
 run path = readFile path >>=
            runPass path (parseScript path) >>=
            runPass path Grouping.run >>=

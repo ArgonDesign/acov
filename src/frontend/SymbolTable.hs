@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveGeneric #-}
+
 module SymbolTable
   ( Symbol
   , SymbolTable
@@ -22,7 +24,9 @@ import qualified Data.Map.Strict as Map
 import Data.Array.IArray
 import qualified Data.Foldable as Foldable
 import Data.Functor
+import Data.Hashable
 import Data.Traversable
+import GHC.Generics (Generic)
 
 import CList
 import ErrorsOr
@@ -31,7 +35,9 @@ import Ranged
 import qualified Parser as P
 
 newtype Symbol = Symbol Int
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Generic)
+
+instance Hashable Symbol
 
 mapGet :: String -> LCRange -> P.Symbol -> Map.Map String Int -> ErrorsOr Int
 mapGet what rng psym map =
@@ -46,6 +52,11 @@ data SymbolTable a =
   SymbolTable { stMap :: Map.Map String Int
               , stData :: Array Int (Ranged P.Symbol, a)
               }
+
+instance Hashable a => Hashable (SymbolTable a)
+  where hashWithSalt n st =
+          hashWithSalt n (Map.toAscList $ stMap st,
+                          elems $ stData st)
 
 instance Functor SymbolTable where
   fmap f st = SymbolTable (stMap st) (f' <$> (stData st))

@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveGeneric #-}
+
 module Width
   ( run
   , Record(..)
@@ -14,7 +16,10 @@ import Control.Exception.Base
 import Data.Bits
 import qualified Data.Map.Strict as Map
 import Data.Maybe
+import Data.Hashable
+import GHC.Generics (Generic)
 
+import BuildVersion (gitDescribe)
 import qualified Expressions as E
 import qualified Symbols as S
 import qualified Parser as P
@@ -36,15 +41,24 @@ data Record = Record { recExpr :: Ranged E.Expression
                      , recClist :: RangeList
                      , recWidth :: Int
                      }
+  deriving Generic
+
+instance Hashable Record
 
 data BitsRecord = BitsRecord { brExpr :: Ranged E.Expression
                              , brSym :: Ranged P.Symbol
                              , brWidth :: Int
                              }
+  deriving Generic
+
+instance Hashable BitsRecord
 
 data Group = Group
              [Ranged E.Expression]
              (Either [Record] BitsRecord)
+  deriving Generic
+
+instance Hashable Group
 
 grpWidth :: Group -> Int
 grpWidth (Group _ (Left recs)) = sum $ map recWidth recs
@@ -61,6 +75,9 @@ data Module = Module { modName :: Ranged P.Symbol
                      , modSyms :: SymbolTable (Ranged E.Slice)
                      , modGroups :: [Group]
                      }
+  deriving Generic
+
+instance Hashable Module
 
 symBits :: SymbolTable (Ranged E.Slice) -> Symbol -> (Int, Int)
 symBits st sym =
@@ -317,5 +334,7 @@ readModule mod =
   Module (E.modName mod) (E.modSyms mod) <$>
   mapEO (readGroup (E.modSyms mod)) (E.modGrps mod)
 
-run :: [E.Module] -> ErrorsOr [Module]
-run = mapEO readModule
+run :: [E.Module] -> ErrorsOr (Int, [Module])
+run mods = do { mods' <- mapEO readModule mods
+              ; return (hash (mods', gitDescribe), mods')
+              }

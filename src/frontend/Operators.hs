@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveGeneric #-}
+
 module Operators
   ( UnOp(..)
   , unOpIsReduction
@@ -9,10 +11,15 @@ module Operators
   , showBinOp
   ) where
 
+import Data.Hashable
+import GHC.Generics (Generic)
+
 data UnOp = LogNot | BitNot
           | RedAnd | RedOr | RedNand | RedNor | RedXor | RedXnor
           | UPlus | UMinus
-  deriving Show
+  deriving (Show, Generic)
+
+instance Hashable UnOp
 
 data BinOp = Times | Divide | Modulo
            | Plus | Minus
@@ -25,7 +32,9 @@ data BinOp = Times | Divide | Modulo
            | BitOr
            | LogAnd
            | LogOr
-  deriving Show
+  deriving (Show, Generic)
+
+instance Hashable BinOp
 
 unOpIsReduction :: UnOp -> Bool
 unOpIsReduction RedAnd = True
