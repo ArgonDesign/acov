@@ -15,36 +15,35 @@ import SymbolTable
 import qualified Width as W
 import qualified Expressions as E
 
-printModule :: Handle -> Int -> W.Module -> IO ()
-printModule h hash mod =
+printModule :: Handle -> Int -> Int -> W.Module -> IO ()
+printModule h hash modIdx mod =
   do { hPutStr h (imports hash)
      ; grps <- mapM (writeWire h syms) (zip [0..] (W.modGroups mod))
      ; startAlways h
-     ; mapM_ (writeGroup h name syms) (zip [0..] grps)
+     ; mapM_ (writeGroup h modIdx syms) (zip [0..] grps)
      ; endAlways h
      }
   where syms = W.modSyms mod
-        name = modName mod
 
 imports :: Int -> String
 imports hash =
   unlines [ "  import \"DPI-C\" context acov_record1 ="
-          , "    function void acov_record1 (input string mod,"
+          , "    function void acov_record1 (input longint mod,"
           , "                                input longint grp,"
           , "                                input longint val);"
           , "  import \"DPI-C\" context acov_record2 ="
-          , "    function void acov_record2 (input string mod,"
+          , "    function void acov_record2 (input longint mod,"
           , "                                input longint grp,"
           , "                                input longint val1,"
           , "                                input longint val0);"
           , "  import \"DPI-C\" context acov_record3 ="
-          , "    function void acov_record3 (input string mod,"
+          , "    function void acov_record3 (input longint mod,"
           , "                                input longint grp,"
           , "                                input longint val2,"
           , "                                input longint val1,"
           , "                                input longint val0);"
           , "  import \"DPI-C\" context acov_record4 ="
-          , "    function void acov_record4 (input string mod,"
+          , "    function void acov_record4 (input longint mod,"
           , "                                input longint grp,"
           , "                                input longint val3,"
           , "                                input longint val2,"
@@ -78,16 +77,16 @@ writeWire handle syms (idx, grp) =
         width = W.grpWidth grp
         exprs = W.grpExprs grp
 
-writeGroup :: Handle -> String -> SymbolTable (Ranged E.Slice) ->
+writeGroup :: Handle -> Int -> SymbolTable (Ranged E.Slice) ->
               (Int, ([Ranged E.Expression], Int)) -> IO ()
-writeGroup handle modname syms (idx, (guard, width)) =
+writeGroup handle modIdx syms (idx, (guard, width)) =
   -- TODO: We need a pass to guarantee the assertions hold
   assert (nwords > 0)
   assert (nwords <= 4) $
   do { guarded <- startGuard handle syms guard
      ; put $ (if guarded then "  " else "") ++ "      acov_record"
      ; put $ show nwords
-     ; put $ " (\"" ++ modname ++ "\", " ++ show idx ++ ", "
+     ; put $ " (" ++ show modIdx ++ ", " ++ show idx ++ ", "
      ; put $ showRecArgs idx width
      ; put ");\n"
      ; endGuard handle guarded

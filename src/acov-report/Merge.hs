@@ -38,8 +38,9 @@ modName :: W.Module -> String
 modName = P.symName . rangedData . W.modName
 
 mergeCoverage :: [W.Module] -> Raw.Coverage -> Either String Coverage
-mergeCoverage mods raw = Coverage (Raw.covCount raw) <$> mapM f mods
-  where f mod = mergeMod mod (Raw.getModData (modName mod) raw)
+mergeCoverage mods raw =
+  Coverage (Raw.covCount raw) <$> mapM f (zip [0..] mods)
+  where f (modIdx, mod) = mergeMod mod (Raw.getModData modIdx raw)
 
 data ModCoverage = ModCoverage String [ScopeCoverage]
 

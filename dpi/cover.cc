@@ -21,13 +21,13 @@ namespace {
     struct recorder_t
     {
         void record (const char        *scope,
-                     const char        *modname,
+                     uint64_t           modname,
                      uint64_t           grp,
                      const std::string &value);
         void flush () const;
 
     private:
-        typedef std::string           modname_t;
+        typedef uint64_t              modname_t;
         typedef std::string           scope_t;
         typedef std::set<std::string> values_t;
 
@@ -41,12 +41,11 @@ namespace {
 }
 
 void recorder_t::record (const char        *scope,
-                         const char        *modname,
+                         uint64_t           modname,
                          uint64_t           grp,
                          const std::string &value)
 {
     if (! scope) scope = "<NO SCOPE>";
-    if (! modname) modname = "<NO MODULE>";
 
     data_ [modname][scope][grp].insert (value);
 }
@@ -167,19 +166,19 @@ static std::string ll_to_str (long long value)
 }
 
 extern "C" {
-    void acov_record1 (const char *modname, long long grp, long long value) {
+    void acov_record1 (long long modname, long long grp, long long value) {
         const char *scope = svGetNameFromScope (svGetScope ());
         get_recorder ()->record (scope, modname, grp, ll_to_str (value));
     }
 
-    void acov_record2 (const char *modname, long long grp,
+    void acov_record2 (long long modname, long long grp,
                        long long value1, long long value0) {
         const char *scope = svGetNameFromScope (svGetScope ());
         get_recorder ()->record (scope, modname, grp,
                                  ll_to_str (value1) + ll_to_str (value0));
     }
 
-    void acov_record3 (const char *modname, long long grp,
+    void acov_record3 (long long modname, long long grp,
                        long long value2, long long value1, long long value0) {
         const char *scope = svGetNameFromScope (svGetScope ());
         get_recorder ()->record (scope, modname, grp,
@@ -187,7 +186,7 @@ extern "C" {
                                  ll_to_str (value0));
     }
 
-    void acov_record4 (const char *modname, long long grp,
+    void acov_record4 (long long modname, long long grp,
                        long long value3, long long value2,
                        long long value1, long long value0) {
         const char *scope = svGetNameFromScope (svGetScope ());

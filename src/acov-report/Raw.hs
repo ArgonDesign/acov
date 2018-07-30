@@ -68,12 +68,12 @@ traverseMD f (ModData map) = Map.traverseWithKey f map
   data it contains.
 -}
 data Coverage = Coverage { covCount :: Int
-                         , covMap :: Map.Map String ModData
+                         , covMap :: Map.Map Integer ModData
                          }
 
 emptyCoverage = Coverage 0 Map.empty
 
-getModData :: String -> Coverage -> ModData
+getModData :: Integer -> Coverage -> ModData
 getModData modname cov = Map.findWithDefault emptyMD modname (covMap cov)
 
 {-
@@ -85,7 +85,7 @@ getModData modname cov = Map.findWithDefault emptyMD modname (covMap cov)
   A record is the group number, then a list of values (parsed into
   integers)
 -}
-data Statement = Module String
+data Statement = Module Integer
                | Scope String
                | Record Int IntegerSet
 
@@ -123,7 +123,7 @@ dot :: Parser ()
 dot = T.reservedOp lexer "."
 
 parseMod :: Parser Statement
-parseMod = T.reserved lexer "MODULE" >> colon >> (Module <$> sym)
+parseMod = T.reserved lexer "MODULE" >> colon >> (Module <$> hex)
 
 parseScope :: Parser Statement
 parseScope = T.reserved lexer "SCOPE" >> colon >>
@@ -170,7 +170,7 @@ parseScript name contents =
   To track this, we have local state that we fold with an Either
   monad.
 -}
-type ScrState = (Maybe String, Maybe String)
+type ScrState = (Maybe Integer, Maybe String)
 
 takeStatement :: (ScrState, Coverage) -> Statement ->
                  Either String (ScrState, Coverage)
@@ -189,7 +189,7 @@ takeStatement ((smod, ssc), cov) (Record grp vals) =
       assert (isJust smod) $
       return ((smod, ssc), updCoverage (fromJust smod) sc grp vals cov)
 
-updCoverage :: String -> String -> Int -> IntegerSet -> Coverage -> Coverage
+updCoverage :: Integer -> String -> Int -> IntegerSet -> Coverage -> Coverage
 updCoverage mod scope grp vals cov =
   cov { covMap = Map.alter (Just . (updMD scope grp vals)) mod (covMap cov) }
 
