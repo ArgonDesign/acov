@@ -43,7 +43,8 @@ $(BUILD)/cabal-config-flags: acov.cabal
 # Dependencies for "cabal build". Firstly, we depend on acov.cabal. We
 # also depend on src/X.hs whenever $(BUILD)/build/acov/acov-tmp/X.hi
 # exists. This seems to ensure all the rebuilds we need.
-hi-files-for = $(wildcard $(BUILD)/build/$(1)/$(1)-tmp/*.hi)
+hi-files-for = $(filter-out %/BuildVersion.hi,\
+                   $(wildcard $(BUILD)/build/$(1)/$(1)-tmp/*.hi))
 hi-relpaths-for = \
   $(patsubst $(BUILD)/build/$(1)/$(1)-tmp/%,%,$(call hi-files-for,$(1)))
 hs-for = $(patsubst %.hi,src/$(1)/%.hs,$(call hi-relpaths-for,$(1)))

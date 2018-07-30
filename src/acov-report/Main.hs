@@ -8,6 +8,7 @@ import System.FilePath ((</>))
 import System.Exit
 import System.IO
 
+import BuildVersion (gitDescribe)
 import qualified Raw
 import qualified Merge
 import qualified CountPass
@@ -31,7 +32,8 @@ mainInfo :: ParserInfo Args
 mainInfo = info (mainArgs <**> helper)
            ( fullDesc <>
              progDesc "Report functional coverage" <>
-             header "acov-report - functional coverage reporter" )
+             header ("acov-report (" ++ gitDescribe ++
+                     ") - functional coverage reporter") )
 
 reportErr :: Either String a -> IO a
 reportErr (Left err) = hPutStr stderr ("Error: " ++ err ++ "\n") >>

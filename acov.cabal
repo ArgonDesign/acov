@@ -11,7 +11,7 @@ author:              Rupert Swarbrick
 maintainer:          rupert.swarbrick@argondesign.com
 -- copyright:
 category:            Development
-build-type:          Simple
+build-type:          Custom
 extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
@@ -64,6 +64,7 @@ executable acov
                      , Printer
                      , DPI
                      , SVA
+                     , BuildVersion
   build-depends:       base >=4.6.0.1 && <4.11
                      , array >= 0.4
                      , containers >= 0.5
@@ -82,6 +83,7 @@ executable acov-report
                      , CountPass
                      , Time
                      , Report
+                     , BuildVersion
   build-depends:       base >=4.6.0.1 && <4.11
                      , array >= 0.4
                      , containers >= 0.5

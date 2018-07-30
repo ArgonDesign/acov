@@ -3,8 +3,10 @@ module Main where
 import Data.Monoid ((<>))
 import Options.Applicative
 
+import BuildVersion (gitDescribe)
 import qualified Frontend
 import qualified Verilog
+
 
 data Args = Args
   { input :: FilePath
@@ -22,7 +24,8 @@ mainInfo :: ParserInfo Args
 mainInfo = info (mainArgs <**> helper)
            ( fullDesc <>
              progDesc "Generate functional coverage bindings" <>
-             header "acov - functional coverage bindings generator" )
+             header ("acov (" ++ gitDescribe ++
+                     ") - functional coverage bindings generator") )
 
 run :: Args -> IO ()
 run args = Frontend.run (input args) >>= Verilog.run (odir args)
