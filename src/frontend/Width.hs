@@ -336,5 +336,5 @@ readModule mod =
 
 run :: [E.Module] -> ErrorsOr (Int, [Module])
 run mods = do { mods' <- mapEO readModule mods
-              ; return (hash (mods', gitDescribe), mods')
+              ; return (abs $ hash (mods', gitDescribe), mods')
               }
