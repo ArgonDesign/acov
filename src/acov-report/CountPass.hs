@@ -25,32 +25,19 @@ import Parser (symName)
   we need to iterate through, looking for which bits have been seen
   set and cleared.
 -}
-cbHits :: Set.Set Integer -> (Integer, Integer)
-cbHits = Foldable.foldr f (0, 0)
-  where f val (ones, zeros) = (ones .|. val, zeros .|. (complement val))
-
-cbCount :: Int -> (Integer, Integer) -> Count
-cbCount w (ones, zeros) = mkCount hits total
-  where mask = shift (1 :: Integer) w - 1
-        hits = popCount (ones .&. mask) + popCount (zeros .&. mask)
+cbCount :: Int -> Set.Set Int -> Set.Set Int -> Count
+cbCount w ones zeros = mkCount hits total
+  where hits = Set.size ones + Set.size zeros
         total = toInteger (2 * w)
 
-zBits :: Bool -> Int -> Integer -> [(Int, Bool)]
-zBits b w n = take 10 $ f (w - 1)
-  where f i =
-          if i < 0 then
-            []
-          else if testBit n i then
-            f (i - 1)
-          else
-            (i, b) : f (i - 1)
-
-cbMissing :: Int -> (Integer, Integer) -> [(Int, Bool)]
-cbMissing w (ones, zeros) = zBits True w ones ++ zBits False w zeros
+cbMissing :: Int -> Set.Set Int -> Set.Set Int -> [(Int, Bool)]
+cbMissing w ones zeros = missing True ones ++ missing False zeros
+  where missing isOne vals =
+          map (\ i -> (i, isOne)) $ filter (bad vals) [0..(w - 1)]
+        bad vals i = not $ Set.member i vals
 
 data GroupCoverage =
-  GroupCoverage { gcVals :: Set.Set Integer
-                , gcCount :: Count
+  GroupCoverage { gcCount :: Count
                 , gcBody :: Either
                             ([W.Record], [[Integer]])
                             (W.BitsRecord, [(Int, Bool)])
@@ -63,26 +50,25 @@ data GroupCoverage =
 -}
 countGroup :: M.GroupCoverage -> GroupCoverage
 
-countGroup (M.GroupCoverage gvals (Left recs)) =
-  GroupCoverage gvals cnt (Left (recs, misses))
-  where cnt = crossCount gvals cross
+countGroup (M.GroupCoverage (Left (M.RecsCoverage recs vals))) =
+  GroupCoverage cnt $ Left (recs, misses)
+  where cnt = crossCount vals cross
         cross = mkCross $ map (\ r -> (W.recWidth r, W.recClist r)) recs
         nToTake = fromInteger (min (countMissed cnt) 10)
-        misses = crossMisses nToTake gvals cross
+        misses = crossMisses nToTake vals cross
 
-countGroup (M.GroupCoverage gvals (Right brec)) =
-  GroupCoverage gvals cnt $ Right (brec, bads)
-  where oz = cbHits gvals
-        w = W.brWidth brec
-        cnt = cbCount w oz
-        bads = take 10 $ cbMissing w oz
+countGroup (M.GroupCoverage (Right (M.BRecCoverage brec (ones, zeros)))) =
+  GroupCoverage cnt $ Right (brec, bads)
+  where w = W.brWidth brec
+        cnt = cbCount w ones zeros
+        bads = take 10 $ cbMissing w ones zeros
 
 gcName :: GroupCoverage -> String
-gcName (GroupCoverage _ _ (Left (recs, _))) =
+gcName (GroupCoverage _ (Left (recs, _))) =
   if length recs == 1 then recName (head recs)
   else intercalate ", " (map recName recs)
   where recName = symName . rangedData . W.recSym
-gcName (GroupCoverage _ _ (Right (brec, _))) =
+gcName (GroupCoverage _ (Right (brec, _))) =
   (symName $ rangedData $ W.brSym brec) ++ " bits"
 
 data ScopeCoverage = ScopeCoverage { scName :: String

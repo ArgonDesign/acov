@@ -73,7 +73,7 @@ wrapTag :: String -> String -> String
 wrapTag tag str = "<" ++ tag ++ ">" ++ str ++ "</" ++ tag ++ ">"
 
 reportMisses :: Handle -> GroupCoverage -> IO ()
-reportMisses h (GroupCoverage _ count (Left (recs, missing))) =
+reportMisses h (GroupCoverage count (Left (recs, missing))) =
   assert (not $ null $ missing) $
   put ("<p>" ++ tag ++ show (length missing) ++
         " misses:</p>" ++
@@ -92,7 +92,7 @@ reportMisses h (GroupCoverage _ count (Left (recs, missing))) =
           else if first then wrapTag "span" $ showMiss recs e
           else ", " ++ (wrapTag "span" $ showMiss recs e)
 
-reportMisses h (GroupCoverage _ count (Right (brec, bads))) =
+reportMisses h (GroupCoverage count (Right (brec, bads))) =
   assert (not $ null $ bads) $
   put ("<p>" ++ tag ++ show (length bads) ++
         " misses:</p>" ++

@@ -3,6 +3,8 @@ module Merge
   , ModCoverage(..)
   , ScopeCoverage(..)
   , GroupCoverage(..)
+  , RecsCoverage(..)
+  , BRecCoverage(..)
   , mergeCoverage
   ) where
 
@@ -14,6 +16,7 @@ import qualified Parser as P
 import qualified Expressions as E
 import qualified Width as W
 
+import Control.Applicative
 import Control.Monad
 
 import Data.Array
@@ -21,6 +24,7 @@ import Data.Bits
 import qualified Data.Foldable as Foldable
 import Data.Functor ((<$>))
 import qualified Data.Map.Strict as Map
+import Data.Maybe (catMaybes)
 import qualified Data.Set as Set
 
 import Numeric (showHex)
@@ -60,11 +64,12 @@ mergeScope mod scope sd =
     " is " ++ show (Raw.sdMaxKey sd) ++
     ", which overflows the expected group length."
   else
-    ScopeCoverage scope <$>
-    (mapM mergeGrp $ zip (W.modGroups mod) (map (Raw.sdGetGroup sd) [0..]))
+    ScopeCoverage scope <$> mapM (mergeGrp sd) (zip [0..] (W.modGroups mod))
 
-data GroupCoverage =
-  GroupCoverage (Set.Set Integer) (Either [W.Record] W.BitsRecord)
+data RecsCoverage = RecsCoverage [W.Record] (Set.Set Integer)
+data BRecCoverage = BRecCoverage W.BitsRecord (Set.Set Int, Set.Set Int)
+
+newtype GroupCoverage = GroupCoverage (Either RecsCoverage BRecCoverage)
 
 checkWidth :: Int -> Integer -> Either String ()
 checkWidth w n =
@@ -74,7 +79,41 @@ checkWidth w n =
   else
     Right ()
 
-mergeGrp :: (W.Group, Set.Set Integer) -> Either String GroupCoverage
-mergeGrp (grp, vals) =
-  Foldable.traverse_ (checkWidth (W.grpWidth grp)) vals >>
-  (return $ case grp of W.Group guard contents -> GroupCoverage vals contents)
+checkWidths :: Int -> Set.Set Integer -> Either String ()
+checkWidths w = Foldable.traverse_ (checkWidth w)
+
+takeBitIdx :: Int -> Integer -> Either String (Maybe Int)
+takeBitIdx width bit =
+  if bit < 0 then
+    Left $ "The index " ++ show bit ++ " is negative, which is invalid."
+  -- We have to round up a bit before throwing an error here because
+  -- the C++ code doesn't know the width of the record and will add
+  -- some extra zero bits seen.
+  else if bit >= 64 + toInteger width then
+    Left $ ("The index " ++ show bit ++ " is too big for the width (" ++
+            show width ++ ").")
+  -- If the bit is not valid, hopefully this was a zero that the C++
+  -- code added spuriously. Ignore it.
+  else if bit >= toInteger width then
+    Right $ Nothing
+  else
+    Right $ Just $ fromInteger bit
+
+takeBitIndices :: Int -> Set.Set Integer -> Set.Set Integer ->
+                  Either String (Set.Set Int, Set.Set Int)
+takeBitIndices w ones zeros = liftA2 (,) (get ones) (get zeros)
+  where get vals = do { ints' <- mapM (takeBitIdx w) (Set.toAscList vals)
+                      ; return $ Set.fromAscList $ catMaybes ints'
+                      }
+
+mergeGrp :: Raw.ScopeData -> (Int, W.Group) -> Either String GroupCoverage
+mergeGrp sd (idx, grp) =
+  case W.grpRecs grp of
+    Left recs -> checkWidths width vals >>
+                 (return $ GroupCoverage $ Left $ RecsCoverage recs vals)
+    Right brec -> (GroupCoverage . Right . BRecCoverage brec) <$>
+                  (takeBitIndices width ones zeros)
+  where vals = Raw.sdGetGroup sd idx
+        ones = vals
+        zeros = Raw.sdGetGroup sd (- (idx + 1))
+        width = W.grpWidth grp

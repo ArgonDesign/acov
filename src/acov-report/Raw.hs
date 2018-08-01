@@ -101,9 +101,16 @@ hex = do { n <- foldl acc 0 <$> (T.lexeme lexer (many1 hexDigit))
          }
   where acc x c = 16 * x + toInteger (digitToInt c)
 
+signedHex :: Parser Integer
+signedHex = do { neg <- option False (T.reservedOp lexer "-" >> return True)
+               ; val <- hex
+               ; return $ if neg then - val else val
+               }
+
 parseGrp :: Parser Int
-parseGrp = do { integer <- hex
-              ; if integer > toInteger (maxBound :: Int) then
+parseGrp = do { integer <- signedHex
+              ; if (integer < toInteger (minBound :: Int) ||
+                    integer > toInteger (maxBound :: Int)) then
                   fail "Group index overflows an Int."
                 else
                   return ()

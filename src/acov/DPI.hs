@@ -29,21 +29,25 @@ imports :: Int -> String
 imports hash =
   unlines [ "  import \"DPI-C\" context acov_record1 ="
           , "    function void acov_record1 (input longint mod,"
+          , "                                input byte cover_bits,"
           , "                                input longint grp,"
           , "                                input longint val);"
           , "  import \"DPI-C\" context acov_record2 ="
           , "    function void acov_record2 (input longint mod,"
+          , "                                input byte cover_bits,"
           , "                                input longint grp,"
           , "                                input longint val1,"
           , "                                input longint val0);"
           , "  import \"DPI-C\" context acov_record3 ="
           , "    function void acov_record3 (input longint mod,"
+          , "                                input byte cover_bits,"
           , "                                input longint grp,"
           , "                                input longint val2,"
           , "                                input longint val1,"
           , "                                input longint val0);"
           , "  import \"DPI-C\" context acov_record4 ="
           , "    function void acov_record4 (input longint mod,"
+          , "                                input byte cover_bits,"
           , "                                input longint grp,"
           , "                                input longint val3,"
           , "                                input longint val2,"
@@ -59,7 +63,7 @@ imports hash =
           ]
 
 writeWire :: Handle -> SymbolTable (Ranged E.Slice) -> (Int, W.Group) ->
-             IO ([Ranged E.Expression], Int)
+             IO ([Ranged E.Expression], Bool, Int)
 writeWire handle syms (idx, grp) =
   assert (width > 0)
   put "  wire [" >>
@@ -71,22 +75,28 @@ writeWire handle syms (idx, grp) =
   put " = " >>
   put (showExpression syms (E.ExprConcat (head exprs) (tail exprs))) >>
   put ";\n\n" >>
-  return (W.grpGuards grp, width)
+  return (W.grpGuards grp, covBits, width)
   where put = hPutStr handle
         name = "acov_recgroup_" ++ show idx
         width = W.grpWidth grp
         exprs = W.grpExprs grp
+        covBits = W.grpIsCovBits grp
+
+boolByte :: Bool -> String
+boolByte False = "8'b0"
+boolByte True = "8'b1"
 
 writeGroup :: Handle -> Int -> SymbolTable (Ranged E.Slice) ->
-              (Int, ([Ranged E.Expression], Int)) -> IO ()
-writeGroup handle modIdx syms (idx, (guard, width)) =
+              (Int, ([Ranged E.Expression], Bool, Int)) -> IO ()
+writeGroup handle modIdx syms (idx, (guards, isCovBits, width)) =
   -- TODO: We need a pass to guarantee the assertions hold
   assert (nwords > 0)
   assert (nwords <= 4) $
-  do { guarded <- startGuard handle syms guard
+  do { guarded <- startGuard handle syms guards
      ; put $ (if guarded then "  " else "") ++ "      acov_record"
      ; put $ show nwords
-     ; put $ " (" ++ show modIdx ++ ", " ++ show idx ++ ", "
+     ; put (" (" ++ show modIdx ++ ", " ++
+            boolByte isCovBits ++ ", " ++ show idx ++ ", ")
      ; put $ showRecArgs idx width
      ; put ");\n"
      ; endGuard handle guarded

@@ -8,6 +8,8 @@ module Width
   , grpWidth
   , grpExprs
   , grpGuards
+  , grpRecs
+  , grpIsCovBits
   , Module(..)
   ) where
 
@@ -70,6 +72,13 @@ grpExprs (Group _ (Right brec)) = [brExpr brec]
 
 grpGuards :: Group -> [Ranged E.Expression]
 grpGuards (Group guards _) = guards
+
+grpRecs :: Group -> Either [Record] BitsRecord
+grpRecs (Group _ recs) = recs
+
+grpIsCovBits :: Group -> Bool
+grpIsCovBits (Group _ (Left _)) = False
+grpIsCovBits (Group _ (Right _)) = True
 
 data Module = Module { modName :: Ranged P.Symbol
                      , modSyms :: SymbolTable (Ranged E.Slice)
