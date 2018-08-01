@@ -64,7 +64,10 @@ namespace {
                       uint64_t           grp,
                       const std::string &value);
 
+        void clear ();
         void flush () const;
+
+        void open (long long hash);
 
     private:
         typedef uint64_t              modname_t;
@@ -74,6 +77,9 @@ namespace {
         // We store module -> scope -> grp -> values
         typedef std::map<scope_t, scope_map_t>    module_map_t;
         typedef std::map<modname_t, module_map_t> map_t;
+
+        bool      hash_valid;
+        long long saved_hash;
 
         map_t data_;
     };
@@ -155,15 +161,21 @@ write_value (std::ofstream &ofile, const std::string &bytes)
     }
 }
 
-static bool        hash_valid;
-static long long   saved_hash;
-static recorder_t *recorder;
+void recorder_t::clear ()
+{
+    data_.clear ();
+}
 
 void recorder_t::flush () const
 {
     std::ofstream ofile ("acov.log");
     if (! ofile.good ()) {
         std::cerr << "Failed to open acov.log to flush coverage data.\n";
+        return;
+    }
+
+    if (! hash_valid) {
+        std::cerr << "Cannot write acov.log because the hash was never set.\n";
         return;
     }
 
@@ -224,20 +236,7 @@ void recorder_t::flush () const
     }
 }
 
-static recorder_t *get_recorder () throw()
-{
-    if (recorder)
-        return recorder;
-
-    if (! hash_valid) {
-        std::cerr << "Error: Instantiating recorder before setting hash.\n";
-    }
-
-    recorder = new recorder_t;
-    return recorder;
-}
-
-static void open (long long hash) throw()
+void recorder_t::open (long long hash)
 {
     if (hash_valid && saved_hash != hash) {
         std::ios::fmtflags flags = std::cerr.flags ();
@@ -246,10 +245,38 @@ static void open (long long hash) throw()
                   << ") with 0x"
                   << hash << ".\n";
         std::cerr.flags (flags);
+    } else {
+        hash_valid = true;
+        saved_hash = hash;
     }
+}
 
-    hash_valid = true;
-    saved_hash = hash;
+static recorder_t *recorder;
+
+static recorder_t *get_recorder () throw()
+{
+    if (recorder)
+        return recorder;
+
+    recorder = new recorder_t;
+    return recorder;
+}
+
+static void record1 (long long modname, const char *scope,
+                     bool cover_bits, long long grp, long long value) throw ()
+{
+    get_recorder ()->record1 (scope, modname, cover_bits, grp, value);
+}
+
+static void recordn (long long modname, const char *scope, bool cover_bits,
+                     long long grp, const std::string &value) throw ()
+{
+    get_recorder ()->recordn (scope, modname, cover_bits, grp, value);
+}
+
+static void open (long long hash) throw()
+{
+    get_recorder ()->open (hash);
 }
 
 static void close () throw ()
@@ -267,6 +294,12 @@ static void close () throw ()
     }
 }
 
+static void clear () throw ()
+{
+    if (recorder)
+        recorder->clear ();
+}
+
 static std::string ll_to_str (long long value)
 {
     return std::string (reinterpret_cast<const char *> (& value), 8);
@@ -277,15 +310,15 @@ extern "C" {
                        long long grp, long long value) {
         const char *scope = svGetNameFromScope (svGetScope ());
         bool is_cb = cover_bits != '\0';
-        get_recorder ()->record1 (scope, modname, is_cb, grp, value);
+        record1 (modname, scope, is_cb, grp, value);
     }
 
     void acov_record2 (long long modname, char cover_bits,
                        long long grp, long long value1, long long value0) {
         const char *scope = svGetNameFromScope (svGetScope ());
         bool is_cb = cover_bits != '\0';
-        get_recorder ()->recordn (scope, modname, is_cb, grp,
-                                  ll_to_str (value0) + ll_to_str (value1));
+        recordn (modname, scope, is_cb, grp,
+                 ll_to_str (value0) + ll_to_str (value1));
     }
 
     void acov_record3 (long long modname,
@@ -293,9 +326,9 @@ extern "C" {
                        long long value2, long long value1, long long value0) {
         const char *scope = svGetNameFromScope (svGetScope ());
         bool is_cb = cover_bits != '\0';
-        get_recorder ()->recordn (scope, modname, is_cb, grp,
-                                  ll_to_str (value0) +
-                                  ll_to_str (value1) + ll_to_str (value2));
+        recordn (modname, scope, is_cb, grp,
+                 ll_to_str (value0) +
+                 ll_to_str (value1) + ll_to_str (value2));
     }
 
     void acov_record4 (long long modname,
@@ -304,9 +337,9 @@ extern "C" {
                        long long value1, long long value0) {
         const char *scope = svGetNameFromScope (svGetScope ());
         bool is_cb = cover_bits != '\0';
-        get_recorder ()->recordn (scope, modname, is_cb, grp,
-                                  ll_to_str (value0) + ll_to_str (value1) +
-                                  ll_to_str (value2) + ll_to_str (value3));
+        recordn (modname, scope, is_cb, grp,
+                 ll_to_str (value0) + ll_to_str (value1) +
+                 ll_to_str (value2) + ll_to_str (value3));
     }
 
     void acov_open (long long hash) {
@@ -315,5 +348,9 @@ extern "C" {
 
     void acov_close () {
         close ();
+    }
+
+    void acov_clear () {
+        clear ();
     }
 }
