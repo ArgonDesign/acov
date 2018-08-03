@@ -23,16 +23,16 @@ report h cov =
             show (covTests cov) ++
             " tests; report generated at " ++ time ++ "</p><p>")
      ; put (showCounts "modules" (covCounts cov))
-     ; put ("</p><h1>Modules</h1>")
+     ; put ("</p><section class=\"modules\"><h1>Modules</h1>")
      ; mapM_ (reportMod h) (covMods cov)
-     ; put "</body></html>"
+     ; put "</section></body></html>"
      }
   where put = hPutStr h
         mods = covMods cov
 
 reportMod :: Handle -> ModCoverage -> IO ()
 reportMod h mc =
-  do { put $ "<h2>Module " ++ (mcName mc) ++ "</h2>"
+  do { put $ "<section class=\"module\"><h2>Module " ++ (mcName mc) ++ "</h2>"
      ; if null scopes then
          put "<p>No scopes seen.</p>"
        else
@@ -43,16 +43,19 @@ reportMod h mc =
                   return ()
               ; mapM_ (reportScope h singleScope) scopes
               }
+     ; put "</section>"
      }
   where put = hPutStr h
         scopes = mcScopes mc
 
 reportScope :: Handle -> Bool -> ScopeCoverage -> IO ()
 reportScope h singleScope sc =
-  do { if not singleScope then put ("<h3>" ++ (scName sc) ++ "</h3>")
+  do { put "<section class=\"scope\">"
+     ; if not singleScope then put ("<h3>" ++ (scName sc) ++ "</h3>")
        else return ()
      ; put (showCounts "groups" (scCounts sc))
      ; mapM_ (reportGrp h) (scGroups sc)
+     ; put "</section>"
      }
   where put = hPutStr h
 
@@ -110,11 +113,14 @@ reportMisses h (GroupCoverage count (Right (brec, bads))) =
 
 reportGrp :: Handle -> GroupCoverage -> IO ()
 reportGrp h gc =
-  put (wrapTag "h4" $ name ++ " (" ++ showCount count ++ ")") >>
-  if countFull count then
-    return ()
-  else
-    reportMisses h gc
+  do { put "<section class=\"group\">"
+  ; put (wrapTag "h4" $ name ++ " (" ++ showCount count ++ ")")
+  ; if countFull count then
+      return ()
+    else
+      reportMisses h gc
+  ; put "</section>"
+  }
   where put = hPutStr h
         name = gcName gc
         count = gcCount gc
