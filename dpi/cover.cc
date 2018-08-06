@@ -66,6 +66,7 @@ namespace {
 
         void clear ();
         void flush () const;
+        recorder_t();
 
         void open (long long hash);
 
@@ -83,6 +84,11 @@ namespace {
 
         map_t data_;
     };
+}
+
+recorder_t::recorder_t()
+    :hash_valid(false), data_()
+{
 }
 
 void recorder_t::record1 (const char        *scope,
