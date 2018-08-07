@@ -74,7 +74,7 @@ crossWidths (Cross wrls) = map fst wrls
 glue :: [Int] -> [Integer] -> Integer
 glue widths us = g (zip widths us) 0
   where g [] x = x
-        g ((w, u):wus) x = shiftL x w .|. u
+        g ((w, u):wus) x = g wus (shiftL x w .|. u)
 
 crossMisses :: Int -> Set.Set Integer -> Cross -> [[Integer]]
 crossMisses n hits cross = f n (crossList cross)
