@@ -11,6 +11,7 @@
 #include <set>
 #include <string>
 #include <stdexcept>
+#include <vector>
 
 #include <stdint.h>
 #include <assert.h>
@@ -50,58 +51,71 @@ namespace {
         mapn_t mapn_;
     };
 
+    // This structure holds information the scopes we've seen for a
+    // module. This is stored as a map from scope name to integer.
+    // This integer indexes into the big vector of contexts where we
+    // allocated an entry by calling open().
+    struct module_scopes_t
+    {
+        std::map<std::string, size_t> scope_posns_;
+    };
+
     struct recorder_t
     {
         recorder_t ();
 
-        void record1 (const char        *scope,
-                      uint64_t           modname,
+        void record1 (uint64_t           ctxt_idx,
                       bool               cover_bits,
                       uint64_t           grp,
                       uint64_t           value);
 
-        void recordn (const char        *scope,
-                      uint64_t           modname,
+        void recordn (uint64_t           ctxt_idx,
                       bool               cover_bits,
                       uint64_t           grp,
                       const std::string &value);
 
+        // Clear all recorded coverage. Leave saved_hash_ and modules_
+        // unmolested.
         void clear ();
+
+        // Write recorded coverage to 'acov.log'.
         void flush () const;
 
-        void open (long long hash);
+        // Open a context, returning a ctxt_idx handle to pass into record*.
+        size_t open (const std::string &scope,
+                     uint64_t           hash,
+                     uint64_t           mod_idx);
 
     private:
-        typedef uint64_t              modname_t;
-        typedef std::string           scope_t;
-        typedef std::set<std::string> values_t;
+        // Track whether the hash has been initialised yet.
+        bool                                hash_valid_;
+        uint64_t                            saved_hash_;
 
-        // We store module -> scope -> grp -> values
-        typedef std::map<scope_t, scope_map_t>    module_map_t;
-        typedef std::map<modname_t, module_map_t> map_t;
+        // We store a map from module index to data about scopes of
+        // that module.
+        std::map<uint64_t, module_scopes_t> modules_;
 
-        bool      hash_valid;
-        long long saved_hash;
-
-        map_t data_;
+        // For each module scope, we have a scope_map_t, which records
+        // the values we've seen. This is indexed by the "ctxt" index
+        // returned by acov_open.
+        std::vector<scope_map_t>            coverage_;
     };
 }
 
 recorder_t::recorder_t ()
-    : hash_valid (false), data_ ()
+    : hash_valid_ (false)
 {}
 
-void recorder_t::record1 (const char        *scope,
-                          uint64_t           modname,
+void recorder_t::record1 (uint64_t           ctxt_idx,
                           bool               cover_bits,
                           uint64_t           grp,
                           uint64_t           value)
 {
-    if (! scope) scope = "<NO SCOPE>";
+    map1_t &map1 = coverage_.at (ctxt_idx).map1_;
 
     if (cover_bits) {
-        values1_t &ones  = data_ [modname][scope].map1_ [grp];
-        values1_t &zeros = data_ [modname][scope].map1_ [- (grp + 1)];
+        values1_t &ones  = map1 [grp];
+        values1_t &zeros = map1 [- (grp + 1)];
 
         for (unsigned i = 0; i < 64; ++ i) {
             if (value & 1) {
@@ -112,21 +126,20 @@ void recorder_t::record1 (const char        *scope,
             value >>= 1;
         }
     } else {
-        data_ [modname][scope].map1_ [grp].insert (value);
+        map1 [grp].insert (value);
     }
 }
 
-void recorder_t::recordn (const char        *scope,
-                          uint64_t           modname,
+void recorder_t::recordn (uint64_t           ctxt_idx,
                           bool               cover_bits,
                           uint64_t           grp,
                           const std::string &value)
 {
-    if (! scope) scope = "<NO SCOPE>";
+    scope_map_t &scope_map = coverage_.at (ctxt_idx);
 
     if (cover_bits) {
-        values1_t &ones  = data_ [modname][scope].map1_ [grp];
-        values1_t &zeros = data_ [modname][scope].map1_ [- (grp + 1)];
+        values1_t &ones  = scope_map.map1_ [grp];
+        values1_t &zeros = scope_map.map1_ [- (grp + 1)];
 
         // Iterate over the value from LSB to MSB. Values are stored
         // in strings little-endian.
@@ -142,7 +155,7 @@ void recorder_t::recordn (const char        *scope,
             }
         }
     } else {
-        data_ [modname][scope].mapn_ [grp].insert (value);
+        scope_map.mapn_ [grp].insert (value);
     }
 }
 
@@ -169,7 +182,11 @@ write_value (std::ofstream &ofile, const std::string &bytes)
 
 void recorder_t::clear ()
 {
-    data_.clear ();
+    std::vector<scope_map_t>::iterator it;
+    for (it = coverage_.begin (); it != coverage_.end (); ++ it) {
+        it->map1_.clear ();
+        it->mapn_.clear ();
+    }
 }
 
 void recorder_t::flush () const
@@ -180,31 +197,33 @@ void recorder_t::flush () const
         return;
     }
 
-    if (! hash_valid) {
+    if (! hash_valid_) {
         std::cerr << "Cannot write acov.log because the hash was never set.\n";
         return;
     }
 
     ofile << std::hex;
-    ofile << saved_hash << "\n";
+    ofile << saved_hash_ << "\n";
 
-    for (map_t::const_iterator it0 = data_.begin ();
-         it0 != data_.end ();
-         ++ it0) {
+    std::map<uint64_t, module_scopes_t>::const_iterator it0;
+    for (it0 = modules_.begin (); it0 != modules_.end (); ++ it0) {
         ofile << "MODULE: " << it0->first << "\n";
 
-        for (module_map_t::const_iterator it1 = it0->second.begin ();
-             it1 != it0->second.end ();
+        std::map<std::string, size_t>::const_iterator it1;
+        for (it1 = it0->second.scope_posns_.begin ();
+             it1 != it0->second.scope_posns_.end ();
              ++ it1) {
-            ofile << "SCOPE: " << it1 -> first << "\n";
+
+            ofile << "SCOPE: " << it1->first << "\n";
+            const scope_map_t &scope_map = coverage_.at (it1->second);
 
             // <= 64-bit records and cover bits records
             //
             // The cover bits records will come out first, with
             // negative indices. This is fine: we'll make sense of the
             // craziness in acov-report.
-            for (map1_t::const_iterator it2 = it1->second.map1_.begin ();
-                 it2 != it1->second.map1_.end ();
+            for (map1_t::const_iterator it2 = scope_map.map1_.begin ();
+                 it2 != scope_map.map1_.end ();
                  ++ it2) {
                 if (it2->first < 0) {
                     ofile << "-" << - it2->first;
@@ -224,8 +243,8 @@ void recorder_t::flush () const
             }
 
             // > 64-bit records
-            for (mapn_t::const_iterator it2 = it1->second.mapn_.begin ();
-                 it2 != it1->second.mapn_.end ();
+            for (mapn_t::const_iterator it2 = scope_map.mapn_.begin ();
+                 it2 != scope_map.mapn_.end ();
                  ++ it2) {
                 ofile << it2->first << ": {";
                 bool first = true;
@@ -242,19 +261,45 @@ void recorder_t::flush () const
     }
 }
 
-void recorder_t::open (long long hash)
+size_t recorder_t::open (const std::string &scope,
+                         uint64_t           hash,
+                         uint64_t           mod_idx)
 {
-    if (hash_valid && saved_hash != hash) {
+    // First, deal with the hash. This should be a global which is the
+    // same every time open is called.
+    if (hash_valid_ && saved_hash_ != hash) {
         std::ios::fmtflags flags = std::cerr.flags ();
         std::cerr << "Error: Overriding existing hash (0x"
-                  << std::hex << saved_hash
+                  << std::hex << saved_hash_
                   << ") with 0x"
                   << hash << ".\n";
         std::cerr.flags (flags);
-    } else {
-        hash_valid = true;
-        saved_hash = hash;
+    } else if (! hash_valid_) {
+        hash_valid_ = true;
+        saved_hash_ = hash;
     }
+
+    // Now we deal with the scope. We need to allocate a new position
+    // for it in coverage.
+    size_t ctxt_idx = coverage_.size ();
+    coverage_.push_back (scope_map_t ());
+    scope_map_t &cmap = coverage_.back ();
+
+    // At this point, cmap is a shiny new map where we want to store
+    // coverage data. Its index in coverage_ is stored in ctxt_idx.
+    module_scopes_t &mscopes = modules_ [mod_idx];
+
+    typedef std::map<std::string, size_t> map_t;
+
+    std::pair<map_t::iterator, bool> pr =
+        mscopes.scope_posns_.insert (map_t::value_type (scope, ctxt_idx));
+
+    // It is an error to call open() twice with the same scope, so
+    // let's check that didn't happen.
+    assert (pr.second);
+
+    // All is well. Return the index
+    return ctxt_idx;
 }
 
 static recorder_t *recorder;
@@ -268,21 +313,23 @@ static recorder_t *get_recorder () throw()
     return recorder;
 }
 
-static void record1 (long long modname, const char *scope,
-                     bool cover_bits, long long grp, long long value) throw ()
+static void record1 (uint64_t ctxt_idx, bool cover_bits,
+                     long long grp, long long value) throw ()
 {
-    get_recorder ()->record1 (scope, modname, cover_bits, grp, value);
+    get_recorder ()->record1 (ctxt_idx, cover_bits, grp, value);
 }
 
-static void recordn (long long modname, const char *scope, bool cover_bits,
+static void recordn (uint64_t ctxt_idx, bool cover_bits,
                      long long grp, const std::string &value) throw ()
 {
-    get_recorder ()->recordn (scope, modname, cover_bits, grp, value);
+    get_recorder ()->recordn (ctxt_idx, cover_bits, grp, value);
 }
 
-static void open (long long hash) throw()
+static long long open (const std::string &scope,
+                       uint64_t           hash,
+                       uint64_t           mod_idx) throw ()
 {
-    get_recorder ()->open (hash);
+    return get_recorder ()->open (scope, hash, mod_idx);
 }
 
 static void close () throw ()
@@ -312,44 +359,52 @@ static std::string ll_to_str (long long value)
 }
 
 extern "C" {
-    void acov_record1 (long long modname, char cover_bits,
+    void acov_record1 (long long ctxt_idx, char cover_bits,
                        long long grp, long long value) {
-        const char *scope = svGetNameFromScope (svGetScope ());
+        assert (ctxt_idx >= 0);
         bool is_cb = cover_bits != '\0';
-        record1 (modname, scope, is_cb, grp, value);
+        record1 (ctxt_idx, is_cb, grp, value);
     }
 
-    void acov_record2 (long long modname, char cover_bits,
+    void acov_record2 (long long ctxt_idx, char cover_bits,
                        long long grp, long long value1, long long value0) {
-        const char *scope = svGetNameFromScope (svGetScope ());
+        assert (ctxt_idx >= 0);
         bool is_cb = cover_bits != '\0';
-        recordn (modname, scope, is_cb, grp,
+        recordn (ctxt_idx, is_cb, grp,
                  ll_to_str (value0) + ll_to_str (value1));
     }
 
-    void acov_record3 (long long modname,
+    void acov_record3 (long long ctxt_idx,
                        char cover_bits, long long grp,
                        long long value2, long long value1, long long value0) {
-        const char *scope = svGetNameFromScope (svGetScope ());
+        assert (ctxt_idx >= 0);
         bool is_cb = cover_bits != '\0';
-        recordn (modname, scope, is_cb, grp,
+        recordn (ctxt_idx, is_cb, grp,
                  ll_to_str (value0) +
                  ll_to_str (value1) + ll_to_str (value2));
     }
 
-    void acov_record4 (long long modname,
+    void acov_record4 (long long ctxt_idx,
                        char cover_bits, long long grp,
                        long long value3, long long value2,
                        long long value1, long long value0) {
-        const char *scope = svGetNameFromScope (svGetScope ());
+        assert (ctxt_idx >= 0);
         bool is_cb = cover_bits != '\0';
-        recordn (modname, scope, is_cb, grp,
+        recordn (ctxt_idx, is_cb, grp,
                  ll_to_str (value0) + ll_to_str (value1) +
                  ll_to_str (value2) + ll_to_str (value3));
     }
 
-    void acov_open (long long hash) {
-        open (hash);
+    long long acov_open (long long hash, long long mod_idx) {
+        const char *scope = svGetNameFromScope (svGetScope ());
+        if (! scope) {
+            std::cerr << "Error: acov_open called with no scope.\n";
+            abort ();
+        }
+
+        assert (hash >= 0);
+        assert (mod_idx >= 0);
+        return open (scope, hash, mod_idx);
     }
 
     void acov_close () {

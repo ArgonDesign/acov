@@ -17,36 +17,36 @@ import qualified Expressions as E
 
 printModule :: Handle -> Int -> Int -> W.Module -> IO ()
 printModule h hash modIdx mod =
-  do { hPutStr h (imports hash)
+  do { hPutStr h (imports hash modIdx)
      ; grps <- mapM (writeWire h syms) (zip [0..] (W.modGroups mod))
      ; startAlways h
-     ; mapM_ (writeGroup h modIdx syms) (zip [0..] grps)
+     ; mapM_ (writeGroup h syms) (zip [0..] grps)
      ; endAlways h
      }
   where syms = W.modSyms mod
 
-imports :: Int -> String
-imports hash =
+imports :: Int -> Int -> String
+imports hash modIdx =
   unlines [ "  import \"DPI-C\" context acov_record1 ="
-          , "    function void acov_record1 (input longint mod,"
+          , "    function void acov_record1 (input longint ctxt,"
           , "                                input byte cover_bits,"
           , "                                input longint grp,"
           , "                                input longint val);"
           , "  import \"DPI-C\" context acov_record2 ="
-          , "    function void acov_record2 (input longint mod,"
+          , "    function void acov_record2 (input longint ctxt,"
           , "                                input byte cover_bits,"
           , "                                input longint grp,"
           , "                                input longint val1,"
           , "                                input longint val0);"
           , "  import \"DPI-C\" context acov_record3 ="
-          , "    function void acov_record3 (input longint mod,"
+          , "    function void acov_record3 (input longint ctxt,"
           , "                                input byte cover_bits,"
           , "                                input longint grp,"
           , "                                input longint val2,"
           , "                                input longint val1,"
           , "                                input longint val0);"
           , "  import \"DPI-C\" context acov_record4 ="
-          , "    function void acov_record4 (input longint mod,"
+          , "    function void acov_record4 (input longint ctxt,"
           , "                                input byte cover_bits,"
           , "                                input longint grp,"
           , "                                input longint val3,"
@@ -54,10 +54,15 @@ imports hash =
           , "                                input longint val1,"
           , "                                input longint val0);"
           , ""
-          , "  import \"DPI-C\" function void acov_open (input longint hash);"
-          , "  import \"DPI-C\" function void acov_close ();"
+          , "  import \"DPI-C\" context function "
+          , "    longint acov_open (input longint hash, input longint modidx);"
+          , "  import \"DPI-C\" context function void acov_close ();"
           , ""
-          , "  initial acov_open (64'h" ++ showHex hash "" ++ ");"
+          , "  longint ctxt;"
+          , "  initial begin"
+          , "    ctxt = acov_open (64'h" ++ showHex hash "" ++ ","
+          , "                      64'h" ++ showHex modIdx "" ++ ");"
+          , "  end"
           , "  final acov_close ();"
           , ""
           ]
@@ -86,17 +91,16 @@ boolByte :: Bool -> String
 boolByte False = "8'b0"
 boolByte True = "8'b1"
 
-writeGroup :: Handle -> Int -> SymbolTable (Ranged E.Slice) ->
+writeGroup :: Handle -> SymbolTable (Ranged E.Slice) ->
               (Int, ([Ranged E.Expression], Bool, Int)) -> IO ()
-writeGroup handle modIdx syms (idx, (guards, isCovBits, width)) =
+writeGroup handle syms (idx, (guards, isCovBits, width)) =
   -- TODO: We need a pass to guarantee the assertions hold
   assert (nwords > 0)
   assert (nwords <= 4) $
   do { guarded <- startGuard handle syms guards
      ; put $ (if guarded then "  " else "") ++ "      acov_record"
      ; put $ show nwords
-     ; put (" (" ++ show modIdx ++ ", " ++
-            boolByte isCovBits ++ ", " ++ show idx ++ ", ")
+     ; put (" (ctxt, " ++ boolByte isCovBits ++ ", " ++ show idx ++ ", ")
      ; put $ showRecArgs idx width
      ; put ");\n"
      ; endGuard handle guarded
