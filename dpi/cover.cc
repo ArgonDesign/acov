@@ -13,8 +13,9 @@
 #include <stdexcept>
 #include <vector>
 
-#include <stdint.h>
 #include <assert.h>
+#include <stdint.h>
+#include <stdlib.h>
 
 #include <svdpi.h>
 
