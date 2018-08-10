@@ -63,8 +63,14 @@ HS_BUILD_DEPS := acov.cabal Setup.hs $(HS_FILES) $(BUILD)/cabal-config-flags
 .PHONY: cabal-build
 cabal-build: $(BUILD)/build/.stamp
 
+# cabal without a "-j" option goes wide for the number of cores on the
+# system, except that if you have loads of cores it then says "I don't
+# think you meant that". Grr. Since there's no "--max-j" option, we
+# need a hack like this.
+CABAL_DASH_J := -j$$(echo "x = $$(nproc); if (x > 40) { 40 } else { x }" | bc)
+
 $(BUILD)/build/.stamp: $(HS_BUILD_DEPS)
-	cabal build $(CABAL_BUILD_DIR)
+	cabal build $(CABAL_DASH_J) $(CABAL_BUILD_DIR)
 	touch $@
 
 ###############################################################################
