@@ -34,7 +34,7 @@ CABAL_CONFIGURE_FLAGS := $(CABAL_BUILD_DIR) --global --prefix=$(PREFIX)
 cabal-configure: $(BUILD)/cabal-config-flags
 
 $(BUILD)/cabal-config-flags: acov.cabal
-	cabal configure $(CABAL_CONFIGURE_FLAGS)
+	./cabal-wrapper.sh configure $(CABAL_CONFIGURE_FLAGS)
 
 ###############################################################################
 # SECTION 3: Building with Cabal
@@ -63,14 +63,8 @@ HS_BUILD_DEPS := acov.cabal Setup.hs $(HS_FILES) $(BUILD)/cabal-config-flags
 .PHONY: cabal-build
 cabal-build: $(BUILD)/build/.stamp
 
-# cabal without a "-j" option goes wide for the number of cores on the
-# system, except that if you have loads of cores it then says "I don't
-# think you meant that". Grr. Since there's no "--max-j" option, we
-# need a hack like this.
-CABAL_DASH_J := -j$$(echo "x = $$(nproc); if (x > 40) { 40 } else { x }" | bc)
-
 $(BUILD)/build/.stamp: $(HS_BUILD_DEPS)
-	cabal build $(CABAL_DASH_J) $(CABAL_BUILD_DIR)
+	./cabal-wrapper.sh build $(CABAL_BUILD_DIR)
 	touch $@
 
 ###############################################################################
@@ -85,7 +79,7 @@ INSTALLED_BINARY := $(DESTDIR)$(PREFIX)/bin/acov
 cabal-copy: $(INSTALLED_BINARY)
 
 $(INSTALLED_BINARY): $(BUILD)/build/.stamp
-	cabal copy $(CABAL_INSTALL_FLAGS)
+	./cabal-wrapper.sh copy $(CABAL_INSTALL_FLAGS)
 
 ###############################################################################
 # SECTION 5: Building the C++ DPI library
