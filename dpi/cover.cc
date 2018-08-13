@@ -25,12 +25,14 @@ namespace {
     // rounded up in length to the next multiple of 64 bits. For
     // 64-bit values or smaller, we store a set of uint64_t's.
     //
-    // When storing "cover bits" groups, there's no need to store all
-    // the values: we only care about which bits get set and cleared.
-    // The values stored are the set of bits that we've seen clear and
-    // bits we've seen set. All cover bits groups are stored in the
-    // values1_t map (because the indices will never get larger than
-    // 2^63)
+    // When storing "cover bits" groups for signals that are at most
+    // 64 bits wide, we just store two uint64_t bitmasks. The first
+    // records which bits we've seen set and the second records which
+    // bits we've seen clear.
+    //
+    // When storing "cover bits" groups for wider signals, we use a
+    // values1_t set. Instead of storing values we've seen, however,
+    // we store the set of bits that we've seen set and clear.
     typedef std::set<uint64_t>    values1_t;
     typedef std::set<std::string> valuesn_t;
 
@@ -40,13 +42,16 @@ namespace {
     // seen high for group i is stored at index i and the set of bits
     // that we've seen low for group i is stored at index -(i+1). (You
     // need the +1 in case group zero is cover bits).
+    typedef std::map<int64_t, uint64_t>  mapcb_t;
     typedef std::map<int64_t, values1_t> map1_t;
     typedef std::map<int64_t, valuesn_t> mapn_t;
 
     // The map for a given scope, from group index to values seen.
     struct scope_map_t
     {
-        // Used for records of <= 64 bits and cover bits records.
+        // Used for cover bits records <= 64 bits wide
+        mapcb_t mapcb_;
+        // Used for records of <= 64 bits and cover bits records > 64 bits wide
         map1_t map1_;
         // Used for records of > 64 bits
         mapn_t mapn_;
@@ -112,22 +117,17 @@ void recorder_t::record1 (uint64_t           ctxt_idx,
                           uint64_t           grp,
                           uint64_t           value)
 {
+    scope_map_t &scope_map = coverage_.at (ctxt_idx);
+
     map1_t &map1 = coverage_.at (ctxt_idx).map1_;
 
     if (cover_bits) {
-        values1_t &ones  = map1 [grp];
-        values1_t &zeros = map1 [- (grp + 1)];
-
-        for (unsigned i = 0; i < 64; ++ i) {
-            if (value & 1) {
-                ones.insert (i);
-            } else {
-                zeros.insert (i);
-            }
-            value >>= 1;
-        }
+        typedef mapcb_t::value_type pair_t;
+        mapcb_t &map_cb = scope_map.mapcb_;
+        map_cb.insert (pair_t (grp, 0)).first->second |= value;
+        map_cb.insert (pair_t (- (grp + 1), 0)).first->second |= ~ value;
     } else {
-        map1 [grp].insert (value);
+        scope_map.map1_ [grp].insert (value);
     }
 }
 
@@ -218,7 +218,30 @@ void recorder_t::flush () const
             ofile << "SCOPE: " << it1->first << "\n";
             const scope_map_t &scope_map = coverage_.at (it1->second);
 
-            // <= 64-bit records and cover bits records
+            // Cover bits records with width <= 64 bits
+            for (mapcb_t::const_iterator it2 = scope_map.mapcb_.begin ();
+                 it2 != scope_map.mapcb_.end ();
+                 ++ it2) {
+
+                if (it2->first < 0) {
+                    ofile << "-" << - it2->first;
+                } else {
+                    ofile << it2->first;
+                }
+                ofile << ": {";
+                bool first = true;
+                for (unsigned bit = 0; bit < 64; ++ bit) {
+                    if ((it2->second >> bit) & 1) {
+                        if (! first) ofile << ", ";
+                        first = false;
+                        ofile << bit;
+                    }
+                }
+                ofile << "}\n";
+            }
+
+            // <= 64-bit records and cover bits records with width >
+            // 64 bits
             //
             // The cover bits records will come out first, with
             // negative indices. This is fine: we'll make sense of the
