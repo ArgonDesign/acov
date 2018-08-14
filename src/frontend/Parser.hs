@@ -6,6 +6,9 @@ module Parser
   , Module(..)
   , Port(..)
   , Statement(..)
+  , RecordStmt(..)
+  , WhenStmt(..)
+  , GroupStmt(..)
   , Expression(..)
   , Cover(..)
   , Slice(..)
@@ -46,11 +49,11 @@ import VInt
          group {
            record foo cover {0..10, 12, 2047};
            record foo + bar[10:0] as foobar cover {0, 1};
-         }
+         } match_scopes "boo"
        }
 
        record baz cover bits;
-       record qux as qxx;
+       record qux as qxx match_scopes "cabbage";
     }
 
   In the parsing stage, we allow group {} and when () {} to nest
@@ -69,9 +72,21 @@ data Module = Module (Ranged Symbol) [Ranged Port] [Ranged Statement]
 
 data Port = Port Symbol (Maybe (Ranged Slice))
 
-data Statement = Record (Ranged Expression) (Maybe (Ranged Symbol)) (Maybe Cover)
-               | When (Ranged Expression) [Ranged Statement]
-               | Group [Ranged Statement]
+data RecordStmt = RecordStmt { recExpr   :: Ranged Expression
+                             , recSym    :: Maybe (Ranged Symbol)
+                             , recCov    :: Maybe Cover
+                             , recScopes :: Maybe String
+                             }
+
+data WhenStmt = WhenStmt { whenGuard :: Ranged Expression
+                         , whenStmts :: [Ranged Statement]
+                         }
+
+data GroupStmt = GroupStmt { grpStmts :: [Ranged Statement]
+                           , grpScopes :: Maybe String
+                           }
+
+data Statement = Record RecordStmt | When WhenStmt | Group GroupStmt
 
 data Cover = CoverList [(Ranged Integer, Ranged Integer)]
            | CoverBits
@@ -103,6 +118,7 @@ reservedNames = [ "module"
                 , "as"
                 , "cover"
                 , "bits"
+                , "match_scopes"
                 ]
 
 reservedOpNames = [ ";" , "," , ":" , "=" , ".."
@@ -314,15 +330,21 @@ statement =
   rangedParse $
   ((group <|> when <|> record) <?> "statement")
 
+scopes :: Parser String
+scopes = T.reserved lexer "match_scopes" >> T.stringLiteral lexer
+
 group :: Parser Statement
-group = T.reserved lexer "group" >>
-        (Group <$> T.braces lexer (many1 statement))
+group = do { T.reserved lexer "group"
+           ; stmts <- T.braces lexer (many1 statement)
+           ; sc <- optionMaybe scopes
+           ; return $ Group (GroupStmt stmts sc)
+           }
 
 when :: Parser Statement
 when = do { T.reserved lexer "when"
            ; guard <- T.parens lexer expression
            ; stmts <- T.braces lexer (many1 statement)
-           ; return $ When guard stmts
+           ; return $ When (WhenStmt guard stmts)
            }
 
 coverpoint :: Parser (Ranged Integer, Ranged Integer)
@@ -343,8 +365,9 @@ record = do { T.reserved lexer "record"
             ; e <- expression
             ; name <- optionMaybe (T.reserved lexer "as" >> rangedParse sym)
             ; clist <- optionMaybe cover
+            ; sc <- optionMaybe scopes
             ; semi
-            ; return $ Record e name clist }
+            ; return $ Record (RecordStmt e name clist sc) }
 
 module' :: Parser Module
 module' = do { T.reserved lexer "module"

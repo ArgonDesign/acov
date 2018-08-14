@@ -31,11 +31,11 @@ showGuards syms guards =
   "))"
 
 writeGroup :: Handle -> PortSyms -> (Int, W.Group) -> IO ()
-writeGroup h syms (idx, W.Group guards grpBody) =
-  prepGroup h syms idx grpBody >>
+writeGroup h syms (idx, grp) =
+  prepGroup h syms idx (W.grpRecs grp) >>
   put ("  covergroup " ++ name ++ " " ++
-       showGuards syms guards ++ ";\n") >>
-  writeRecs h syms idx grpBody >>
+       showGuards syms (W.grpGuards grp) ++ ";\n") >>
+  writeRecs h syms idx (W.grpRecs grp) >>
   put "  endgroup\n\n" >>
   put ("  " ++ name ++ " " ++ name ++ "_Inst = new;\n")
   where put = hPutStr h

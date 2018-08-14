@@ -53,7 +53,7 @@ mergeMod mod md =
   (ModCoverage (modName mod) . Map.elems) <$>
   Raw.traverseMD (mergeScope mod) md
 
-data ScopeCoverage = ScopeCoverage String [GroupCoverage]
+data ScopeCoverage = ScopeCoverage String [(String, GroupCoverage)]
 
 mergeScope :: W.Module -> String -> Raw.ScopeData ->
               Either String ScopeCoverage
@@ -64,12 +64,15 @@ mergeScope mod scope sd =
     " is " ++ show (Raw.sdMaxKey sd) ++
     ", which overflows the expected group length."
   else
-    ScopeCoverage scope <$> mapM (mergeGrp sd) (zip [0..] (W.modGroups mod))
+    ScopeCoverage scope <$>
+    mapM (mergeGrp scope sd) (zip [0..] (W.modGroups mod))
 
 data RecsCoverage = RecsCoverage [W.Record] (Set.Set Integer)
 data BRecCoverage = BRecCoverage W.BitsRecord (Set.Set Int, Set.Set Int)
 
-newtype GroupCoverage = GroupCoverage (Either RecsCoverage BRecCoverage)
+data GroupCoverage = Recs RecsCoverage
+                   | BRec BRecCoverage
+                   | BadScope
 
 checkWidth :: Int -> Integer -> Either String ()
 checkWidth w n =
@@ -106,14 +109,19 @@ takeBitIndices w ones zeros = liftA2 (,) (get ones) (get zeros)
                       ; return $ Set.fromAscList $ catMaybes ints'
                       }
 
-mergeGrp :: Raw.ScopeData -> (Int, W.Group) -> Either String GroupCoverage
-mergeGrp sd (idx, grp) =
-  case W.grpRecs grp of
-    Left recs -> checkWidths width vals >>
-                 (return $ GroupCoverage $ Left $ RecsCoverage recs vals)
-    Right brec -> (GroupCoverage . Right . BRecCoverage brec) <$>
-                  (takeBitIndices width ones zeros)
+mergeGrp :: String -> Raw.ScopeData -> (Int, W.Group) ->
+            Either String (String, GroupCoverage)
+mergeGrp scope sd (idx, grp) = ((,) (W.grpName grp)) <$> gc
   where vals = Raw.sdGetGroup sd idx
         ones = vals
         zeros = Raw.sdGetGroup sd (- (idx + 1))
         width = W.grpWidth grp
+        gc =
+          if W.grpMatchesScope grp scope then
+            case W.grpRecs grp of
+              Left recs -> checkWidths width vals >>
+                           (Right $ Recs $ RecsCoverage recs vals)
+              Right brec -> (BRec . BRecCoverage brec) <$>
+                            (takeBitIndices width ones zeros)
+          else
+            Right $ BadScope

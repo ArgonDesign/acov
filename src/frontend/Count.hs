@@ -48,8 +48,9 @@ data Counts = Counts Count Count
 zeroCounts :: Counts
 zeroCounts = Counts zeroCount zeroCount
 
-incCounts1 :: Count -> Counts -> Counts
-incCounts1 c (Counts tcnt gcnt) =
+incCounts1 :: Maybe Count -> Counts -> Counts
+incCounts1 Nothing counts = counts
+incCounts1 (Just c) (Counts tcnt gcnt) =
   Counts (incCount (countFull c) tcnt) (addCount c gcnt)
 
 incCounts :: Counts -> Counts -> Counts

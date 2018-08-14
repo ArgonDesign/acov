@@ -3,12 +3,12 @@ module CountPass
   , ModCoverage(..)
   , ScopeCoverage(..)
   , GroupCoverage(..)
-  , gcName
+  , GroupCount(..)
+  , covCount
   , run
   ) where
 
 import Data.Bits
-import Data.List
 import qualified Data.Set as Set
 import qualified Data.Foldable as Foldable
 
@@ -36,50 +36,54 @@ cbMissing w ones zeros = missing True ones ++ missing False zeros
           map (\ i -> (i, isOne)) $ filter (bad vals) [0..(w - 1)]
         bad vals i = not $ Set.member i vals
 
-data GroupCoverage =
-  GroupCoverage { gcCount :: Count
-                , gcBody :: Either
-                            ([W.Record], [[Integer]])
-                            (W.BitsRecord, [(Int, Bool)])
-                }
+data GroupCount a = GroupCount Count a
+
+gcCount :: GroupCount a -> Count
+gcCount (GroupCount count _) = count
+
+data GroupCoverage = RecCov (GroupCount ([W.Record], [[Integer]]))
+                   | BRecCov (GroupCount (W.BitsRecord, [(Int, Bool)]))
+                   | BadScope
+
+covCount :: GroupCoverage -> Maybe Count
+covCount (RecCov gc) = Just $ gcCount gc
+covCount (BRecCov gc) = Just $ gcCount gc
+covCount BadScope = Nothing
 
 {-
   This runs through the crossed values, counting up how many of them
   we've managed to hit. We also collect the first 10 values that we
   missed.
 -}
-countGroup :: M.GroupCoverage -> GroupCoverage
+countGroup' :: M.GroupCoverage -> GroupCoverage
 
-countGroup (M.GroupCoverage (Left (M.RecsCoverage recs vals))) =
-  GroupCoverage cnt $ Left (recs, misses)
+countGroup' (M.Recs (M.RecsCoverage recs vals)) =
+  RecCov (GroupCount cnt (recs, misses))
   where cnt = crossCount vals cross
         cross = mkCross $ map (\ r -> (W.recWidth r, W.recClist r)) recs
         nToTake = fromInteger (min (countMissed cnt) 10)
         misses = crossMisses nToTake vals cross
 
-countGroup (M.GroupCoverage (Right (M.BRecCoverage brec (ones, zeros)))) =
-  GroupCoverage cnt $ Right (brec, bads)
+countGroup' (M.BRec (M.BRecCoverage brec (ones, zeros))) =
+  BRecCov (GroupCount cnt (brec, bads))
   where w = W.brWidth brec
         cnt = cbCount w ones zeros
         bads = take 10 $ cbMissing w ones zeros
 
-gcName :: GroupCoverage -> String
-gcName (GroupCoverage _ (Left (recs, _))) =
-  if length recs == 1 then recName (head recs)
-  else intercalate ", " (map recName recs)
-  where recName = symName . rangedData . W.recSym
-gcName (GroupCoverage _ (Right (brec, _))) =
-  (symName $ rangedData $ W.brSym brec) ++ " bits"
+countGroup' M.BadScope = BadScope
+
+countGroup :: (String, M.GroupCoverage) -> (String, GroupCoverage)
+countGroup (grpName, gc) = (grpName, countGroup' gc)
 
 data ScopeCoverage = ScopeCoverage { scName :: String
                                    , scCounts :: Counts
-                                   , scGroups :: [GroupCoverage]
+                                   , scGroups :: [(String, GroupCoverage)]
                                    }
 
 countScope :: M.ScopeCoverage -> ScopeCoverage
 countScope (M.ScopeCoverage name gcs) = ScopeCoverage name scnts gcs'
   where gcs' = map countGroup gcs
-        scnts = foldr incCounts1 zeroCounts (map gcCount gcs')
+        scnts = foldr incCounts1 zeroCounts (map (covCount . snd) gcs')
 
 data ModCoverage = ModCoverage { mcName :: String
                                , mcCounts :: Counts

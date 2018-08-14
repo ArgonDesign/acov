@@ -57,6 +57,7 @@ data BitsRecord = BitsRecord (Ranged Expression) (Ranged P.Symbol)
 data Group = Group
              [Ranged Expression]
              (Either [Record] BitsRecord)
+             (Maybe String)
 
 type PortSyms = SymbolTable (Maybe (Ranged P.Slice))
 
@@ -168,18 +169,18 @@ readBitRecord ps (G.BitsRecord expr name) =
 
 readGroup :: PortSyms -> G.Group -> ErrorsOr Group
 
-readGroup ps (G.Group guards (Left recs)) =
+readGroup ps (G.Group guards (Left recs) scopes) =
   do { (guards', (stb, recs')) <- liftA2 (,)
                                   (mapEO (readExpression ps) guards)
                                   (foldEO (takeRecord ps) (stbEmpty, []) recs)
-     ; return $ Group guards' $ Left $ reverse recs'
+     ; return $ Group guards' (Left $ reverse recs') scopes
      }
 
-readGroup ps (G.Group guards (Right brec)) =
+readGroup ps (G.Group guards (Right brec) scopes) =
   do { (guards', brec') <- liftA2 (,)
                            (mapEO (readExpression ps) guards)
                            (readBitRecord ps brec)
-     ; return $ Group guards' $ Right brec'
+     ; return $ Group guards' (Right brec') scopes
      }
 
 readModule :: G.Module -> ErrorsOr Module

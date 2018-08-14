@@ -76,7 +76,7 @@ wrapTag :: String -> String -> String
 wrapTag tag str = "<" ++ tag ++ ">" ++ str ++ "</" ++ tag ++ ">"
 
 reportMisses :: Handle -> GroupCoverage -> IO ()
-reportMisses h (GroupCoverage count (Left (recs, missing))) =
+reportMisses h (RecCov (GroupCount count (recs, missing))) =
   assert (not $ null $ missing) $
   put ("<p>" ++ tag ++ show (length missing) ++
         " misses:</p>" ++
@@ -95,7 +95,7 @@ reportMisses h (GroupCoverage count (Left (recs, missing))) =
           else if first then wrapTag "span" $ showMiss recs e
           else ", " ++ (wrapTag "span" $ showMiss recs e)
 
-reportMisses h (GroupCoverage count (Right (brec, bads))) =
+reportMisses h (BRecCov (GroupCount count (brec, bads))) =
   assert (not $ null $ bads) $
   put ("<p>" ++ tag ++ show (length bads) ++
         " misses:</p>" ++
@@ -111,16 +111,21 @@ reportMisses h (GroupCoverage count (Right (brec, bads))) =
           (if first then "" else ", ") ++
           (wrapTag "span" $ showMissBit e)
 
-reportGrp :: Handle -> GroupCoverage -> IO ()
-reportGrp h gc =
+reportMisses h BadScope =
+  error "We shouldn't try to report misses for an ignored count."
+
+reportGrp :: Handle -> (String, GroupCoverage) -> IO ()
+reportGrp h (name, gc) =
   do { put "<section class=\"group\">"
-  ; put (wrapTag "h4" $ name ++ " (" ++ showCount count ++ ")")
-  ; if countFull count then
-      return ()
-    else
-      reportMisses h gc
-  ; put "</section>"
-  }
+     ; case covCount gc of
+         Nothing ->
+           put (wrapTag "h4" $ name ++ " (ignored as scope doesn't match)")
+         Just count ->
+           put (wrapTag "h4" $ name ++ " (" ++ showCount count ++ ")") >>
+           if countFull count then
+             return ()
+           else
+             reportMisses h gc
+     ; put "</section>"
+     }
   where put = hPutStr h
-        name = gcName gc
-        count = gcCount gc

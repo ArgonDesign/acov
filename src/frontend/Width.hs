@@ -4,18 +4,21 @@ module Width
   ( run
   , Record(..)
   , BitsRecord(..)
-  , Group(..)
+  , Group
   , grpWidth
   , grpExprs
   , grpGuards
   , grpRecs
   , grpIsCovBits
+  , grpMatchesScope
+  , grpName
   , Module(..)
   ) where
 
 import Control.Applicative
 import Control.Exception.Base
 import Data.Bits
+import Data.List (isInfixOf, intercalate)
 import qualified Data.Map.Strict as Map
 import Data.Maybe
 import Data.Hashable
@@ -55,30 +58,44 @@ data BitsRecord = BitsRecord { brExpr :: Ranged E.Expression
 
 instance Hashable BitsRecord
 
-data Group = Group
-             [Ranged E.Expression]
-             (Either [Record] BitsRecord)
+data Group = Group { grpGuards :: [Ranged E.Expression]
+                   , grpRecs   :: Either [Record] BitsRecord
+                   , grpScopes :: Maybe String
+                   }
   deriving Generic
 
 instance Hashable Group
 
 grpWidth :: Group -> Int
-grpWidth (Group _ (Left recs)) = sum $ map recWidth recs
-grpWidth (Group _ (Right brec)) = brWidth brec
+grpWidth g = case grpRecs g of
+               Left recs -> sum $ map recWidth recs
+               Right brec -> brWidth brec
 
 grpExprs :: Group -> [Ranged E.Expression]
-grpExprs (Group _ (Left recs)) = map recExpr recs
-grpExprs (Group _ (Right brec)) = [brExpr brec]
-
-grpGuards :: Group -> [Ranged E.Expression]
-grpGuards (Group guards _) = guards
-
-grpRecs :: Group -> Either [Record] BitsRecord
-grpRecs (Group _ recs) = recs
+grpExprs g = case grpRecs g of
+               Left recs -> map recExpr recs
+               Right brec -> [brExpr brec]
 
 grpIsCovBits :: Group -> Bool
-grpIsCovBits (Group _ (Left _)) = False
-grpIsCovBits (Group _ (Right _)) = True
+grpIsCovBits g = case grpRecs g of
+                   Left _ -> False
+                   Right _ -> True
+
+grpMatchesScope :: Group -> String -> Bool
+grpMatchesScope g scope =
+  case grpScopes g of
+    Nothing -> True
+    Just str -> isInfixOf str scope
+
+grpName :: Group -> String
+grpName g =
+  case grpRecs g of
+    Left recs ->
+      if length recs == 1 then recName (head recs)
+      else intercalate ", " (map recName recs)
+    Right brec -> brecName brec ++ " bits"
+  where recName = P.symName . rangedData . recSym
+        brecName = P.symName . rangedData . brSym
 
 data Module = Module { modName :: Ranged P.Symbol
                      , modSyms :: SymbolTable (Ranged E.Slice)
@@ -324,18 +341,18 @@ checkGuard symST guard =
      }
 
 readGroup :: SymbolTable (Ranged E.Slice) -> E.Group -> ErrorsOr Group
-readGroup symST (E.Group guards (Left recs)) =
+readGroup symST (E.Group guards (Left recs) scopes) =
   do { recs' <- snd <$> (liftA2 (,)
                          (mapEO (checkGuard symST) guards)
                          (mapEO (takeRec symST) recs))
-     ; return $ Group guards $ Left recs'
+     ; return $ Group guards (Left recs') scopes
      }
 
-readGroup symST (E.Group guards (Right (E.BitsRecord expr name))) =
+readGroup symST (E.Group guards (Right (E.BitsRecord expr name)) scopes) =
   do { w <- snd <$> (liftA2 (,)
                       (mapEO (checkGuard symST) guards)
                       (exprWidth symST expr))
-     ; return $ Group guards $ Right $ BitsRecord expr name w
+     ; return $ Group guards (Right $ BitsRecord expr name w) scopes
      }
 
 readModule :: E.Module -> ErrorsOr Module
