@@ -18,6 +18,7 @@ module Width
 import Control.Applicative
 import Control.Exception.Base
 import Data.Bits
+import qualified Data.Foldable as F
 import Data.List (isInfixOf, intercalate)
 import qualified Data.Map.Strict as Map
 import Data.Maybe
@@ -33,7 +34,8 @@ import ErrorsOr
 import Operators
 import VInt
 import Ranged
-import RangeList
+import IvlList (makeIvlList)
+import RangeList (RangeList, rlRange, ivlListToRangeList)
 
 {-
   The width pass does width checking (working with a Verilog-like
@@ -295,6 +297,23 @@ fitsInBits :: Integer -> Int -> Bool
 fitsInBits n w = assert (w > 0) $ shift (abs n) (- sw) == 0
   where sw = if n >= 0 then w else w - 1
 
+checkRange :: Int -> (Ranged Integer, Ranged Integer) -> ErrorsOr ()
+checkRange w (lo, hi) =
+  (liftA3 (,,)
+   (chkRng lo) (chkRng hi)
+   (if rangedData hi < rangedData lo then
+      bad1 $ copyRange hi $ "Cover list has a range with min less than max."
+    else
+      good ())) >>
+  return ()
+  where chkRng x =
+          if (not $ fitsInBits (rangedData x) w) then
+            bad1 $ copyRange x $
+            "Cover list has entry of " ++ show (rangedData x) ++
+            ", but the cover expression has width " ++ show w ++ "."
+          else
+            return ()
+
 makeCList :: LCRange -> Int ->
              Maybe [(Ranged Integer, Ranged Integer)] -> ErrorsOr RangeList
 makeCList rng w Nothing =
@@ -305,23 +324,10 @@ makeCList rng w Nothing =
     return $ rlRange (0, max)
   where max = (shiftL (1 :: Integer) w) - 1
 
-makeCList _ w (Just pairs) = foldEO f rlEmpty pairs
-  where f rl (lo, hi) =
-          do { chkRng lo
-             ; chkRng hi
-             ; if rangedData hi < rangedData lo then
-                 bad1 $ copyRange hi $
-                 "Cover list has a range with min less than max."
-               else
-                 good $ rlAdd (rangedData lo, rangedData hi) rl
-             }
-        chkRng x =
-          if (not $ fitsInBits (rangedData x) w) then
-            bad1 $ copyRange x $
-            "Cover list has entry of " ++ show (rangedData x) ++
-            ", but the cover expression has width " ++ show w ++ "."
-          else
-            return ()
+makeCList _ w (Just pairs) =
+  F.traverse_ (checkRange w) pairs >>
+  (return $ ivlListToRangeList $ makeIvlList $ map stripRanges pairs)
+  where stripRanges (ra, rb) = (rangedData ra, rangedData rb)
 
 takeRec :: SymbolTable (Ranged E.Slice) -> E.Record -> ErrorsOr Record
 takeRec st (E.Record expr rsym clist) =

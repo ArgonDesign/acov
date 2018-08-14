@@ -9,11 +9,14 @@ module RangeList
   , rlMember
   , rlRange
   , rlAdd
+  , ivlListToRangeList
   ) where
 
 import Control.Exception.Base
 import qualified Data.Map.Strict as Map
 import Data.Hashable
+
+import IvlList
 
 data RangeList = RangeList { rlLength :: Integer
                            , rlRanges :: Map.Map Integer Integer
@@ -79,3 +82,11 @@ flattenFinish (pairs, Just (low, high), size) =
 
 flatten :: Map.Map Integer Integer -> RangeList
 flatten = flattenFinish . Map.foldlWithKey flattenUpd ([], Nothing, 0)
+
+-- Alternative constructor, via an IvlList. If you don't need the
+-- intermediate data structures, this should be much more efficient
+-- than generating an empty RangeList and adding the intervals one at
+-- a time.
+ivlListToRangeList :: IvlList -> RangeList
+ivlListToRangeList ilist =
+  RangeList (ivlListLen ilist) (Map.fromAscList (ivlListIntervals ilist))

@@ -23,6 +23,7 @@ library
                      , VInt
                      , CList
                      , Count
+                     , IvlList
                      , RangeList
                      , Cross
                      , Parser
