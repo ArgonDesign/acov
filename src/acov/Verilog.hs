@@ -82,7 +82,7 @@ printModule hash modIdx mod h =
 
 dumpModule :: FilePath -> Int -> (Int, W.Module) -> IO ()
 dumpModule dirname hash (modIdx, mod) =
-  withFile (dirname </> (modName mod ++ "_coverage.v")) WriteMode
+  withFile (dirname </> (modName mod ++ "_coverage.sv")) WriteMode
   (printModule hash modIdx mod)
 
 run :: FilePath -> (Int, [W.Module]) -> IO ()
