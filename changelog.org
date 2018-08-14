@@ -1,0 +1,8 @@
+#+OPTIONS: ^:nil
+#+STARTUP: showeverything
+
+* v0.2
+  - Coverage RTL is now written to foo_coverage.sv rather than foo_coverage.v
+  - SystemVerilog coverage is now based on ACOV_SV rather than ACOV_SVA
+* v0.1
+  - Initial release
