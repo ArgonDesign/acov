@@ -1,4 +1,4 @@
-module SVA
+module SV
   ( printModule
   ) where
 

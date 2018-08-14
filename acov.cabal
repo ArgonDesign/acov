@@ -65,7 +65,7 @@ executable acov
   other-modules:       Verilog
                      , Printer
                      , DPI
-                     , SVA
+                     , SV
                      , BuildVersion
   build-depends:       base >=4.6.0.1 && <4.11
                      , array >= 0.4

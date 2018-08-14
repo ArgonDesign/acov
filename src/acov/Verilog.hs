@@ -17,7 +17,7 @@ import SymbolTable
 import Printer
 
 import qualified DPI
-import qualified SVA
+import qualified SV
 
 import qualified Parser as P
 import qualified Expressions as E
@@ -65,10 +65,10 @@ printModule hash modIdx mod h =
      ; print (head portStrs)
      ; mapM_ (\ str -> print indent >> print str) (tail portStrs)
      ; print ");\n\n"
-     ; print "`ifndef ACOV_SVA\n"
+     ; print "`ifndef ACOV_SV\n"
      ; DPI.printModule h hash modIdx mod
      ; print "`else\n"
-     ; SVA.printModule h mod
+     ; SV.printModule h mod
      ; print "`endif\n"
      ; print "endmodule\n\n"
      ; print fileFooter
