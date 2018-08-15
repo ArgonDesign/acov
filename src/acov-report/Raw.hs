@@ -87,7 +87,7 @@ getModData modname cov = Map.findWithDefault emptyMD modname (covMap cov)
 -}
 data Statement = Module Integer
                | Scope String
-               | Record Int IntegerSet
+               | Record Int [Integer]
 
 language :: L.LanguageDef ()
 language = L.emptyDef { T.commentLine = "#" }
@@ -117,8 +117,8 @@ parseGrp = do { integer <- signedHex
               ; return $ fromInteger integer
               }
 
-vals :: Parser IntegerSet
-vals = Set.fromList <$> (T.braces lexer $ sepBy hex (T.reservedOp lexer ","))
+vals :: Parser [Integer]
+vals = T.braces lexer $ sepBy hex (T.reservedOp lexer ",")
 
 sym :: Parser String
 sym = T.identifier lexer
@@ -196,29 +196,29 @@ takeStatement ((smod, ssc), cov) (Record grp vals) =
       assert (isJust smod) $
       return ((smod, ssc), updCoverage (fromJust smod) sc grp vals cov)
 
-updCoverage :: Integer -> String -> Int -> IntegerSet -> Coverage -> Coverage
+updCoverage :: Integer -> String -> Int -> [Integer] -> Coverage -> Coverage
 updCoverage mod scope grp vals cov =
   cov { covMap = Map.alter (Just . (updMD scope grp vals)) mod (covMap cov) }
 
-updMD :: String -> Int -> IntegerSet -> Maybe ModData -> ModData
+updMD :: String -> Int -> [Integer] -> Maybe ModData -> ModData
 updMD scope grp vals Nothing = newMD scope grp vals
 updMD scope grp vals (Just (ModData map)) =
   ModData $ Map.alter (Just . (updSD grp vals)) scope map
 
-newMD :: String -> Int -> IntegerSet -> ModData
+newMD :: String -> Int -> [Integer] -> ModData
 newMD scope grp vals = ModData $ Map.singleton scope $ newSD grp vals
 
-updSD :: Int -> IntegerSet -> Maybe ScopeData -> ScopeData
+updSD :: Int -> [Integer] -> Maybe ScopeData -> ScopeData
 updSD grp vals Nothing = newSD grp vals
 updSD grp vals (Just (ScopeData map)) =
   ScopeData $ Map.alter (Just . (updGrp vals)) grp map
 
-newSD :: Int -> IntegerSet -> ScopeData
-newSD grp vals = ScopeData $ Map.singleton grp vals
+newSD :: Int -> [Integer] -> ScopeData
+newSD grp vals = ScopeData $ Map.singleton grp $ Set.fromList vals
 
-updGrp :: IntegerSet -> Maybe IntegerSet -> IntegerSet
-updGrp vals Nothing = vals
-updGrp vals (Just vals') = vals <> vals'
+updGrp :: [Integer] -> Maybe IntegerSet -> IntegerSet
+updGrp vals Nothing = Set.fromList vals
+updGrp vals (Just vals') = Set.fromList vals <> vals'
 
 takeScript :: Coverage -> Int ->
               (Integer, [Statement]) -> Either String Coverage
