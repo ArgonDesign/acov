@@ -199,8 +199,12 @@ takeStatement ((smod, ssc), cov) (Record grp vals) =
 
 updCoverage :: Integer -> String -> Int -> [Integer] -> Coverage -> Coverage
 updCoverage mod scope grp vals cov =
-  let map' = Map.alter (Just . (updMD scope grp vals)) mod (covMap cov) in
-    seq map' $ cov { covMap = map' }
+  -- Build a new Coverage object with the updated map. Note that we
+  -- have to ensure strict evaluation of count as well as map' to
+  -- avoid leaking a reference to the old coverage object.
+  seq count $ seq map' $ Coverage count map'
+  where count = covCount cov
+        map' = Map.alter (Just . (updMD scope grp vals)) mod (covMap cov)
 
 updMD :: String -> Int -> [Integer] -> Maybe ModData -> ModData
 updMD scope grp vals Nothing = newMD scope grp vals
