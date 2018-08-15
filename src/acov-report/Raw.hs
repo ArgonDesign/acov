@@ -1,5 +1,3 @@
-{-# LANGUAGE DeriveGeneric, BangPatterns #-}
-
 module Raw
   ( Coverage
   , covCount
@@ -36,9 +34,6 @@ import Text.Parsec.String
 import qualified Text.Parsec.Language as L
 import qualified Text.Parsec.Token as T
 
-import Control.DeepSeq
-import GHC.Generics (Generic)
-
 type IntegerSet = Set.Set Integer
 
 {-
@@ -48,9 +43,6 @@ type IntegerSet = Set.Set Integer
   group index to a set of integer values seen.
 -}
 newtype ScopeData = ScopeData (Map.Map Int IntegerSet)
-  deriving Generic
-
-instance NFData ScopeData
 
 sdMaxKey :: ScopeData -> Int
 sdMaxKey (ScopeData map) = if Map.null map then (-1) else fst $ Map.findMax map
@@ -63,9 +55,6 @@ sdGetGroup (ScopeData map) n = Map.findWithDefault Set.empty n map
   instantiations). It is a map from scope name to associated data.
 -}
 newtype ModData = ModData (Map.Map String ScopeData)
-  deriving Generic
-
-instance NFData ModData
 
 emptyMD = ModData Map.empty
 
@@ -81,9 +70,6 @@ traverseMD f (ModData map) = Map.traverseWithKey f map
 data Coverage = Coverage { covCount :: Int
                          , covMap :: Map.Map Integer ModData
                          }
-  deriving Generic
-
-instance NFData Coverage
 
 emptyCoverage = Coverage 0 Map.empty
 
@@ -214,10 +200,7 @@ takeStatement ((smod, ssc), cov) (Record grp vals) =
 updCoverage :: Integer -> String -> Int -> [Integer] -> Coverage -> Coverage
 updCoverage mod scope grp vals cov =
   let map' = Map.alter (Just . (updMD scope grp vals)) mod (covMap cov) in
-    -- TODO: This is a hack. I want to make sure that the old Coverage
-    --       object gets thrown away to avoid a space leak, but can't
-    --       work out how to sprinkle with seq calls correctly. :-(
-    seq map' $ force (cov { covMap = map' })
+    seq map' $ cov { covMap = map' }
 
 updMD :: String -> Int -> [Integer] -> Maybe ModData -> ModData
 updMD scope grp vals Nothing = newMD scope grp vals
