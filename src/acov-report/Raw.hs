@@ -194,11 +194,13 @@ takeStatement ((smod, ssc), cov) (Record grp vals) =
     Nothing -> Left $ "Cannot record group without ambient scope."
     Just sc ->
       assert (isJust smod) $
-      return ((smod, ssc), updCoverage (fromJust smod) sc grp vals cov)
+      let cov' = updCoverage (fromJust smod) sc grp vals cov in
+        return $ seq cov' ((smod, ssc), cov')
 
 updCoverage :: Integer -> String -> Int -> [Integer] -> Coverage -> Coverage
 updCoverage mod scope grp vals cov =
-  cov { covMap = Map.alter (Just . (updMD scope grp vals)) mod (covMap cov) }
+  let map' = Map.alter (Just . (updMD scope grp vals)) mod (covMap cov) in
+    seq map' $ cov { covMap = map' }
 
 updMD :: String -> Int -> [Integer] -> Maybe ModData -> ModData
 updMD scope grp vals Nothing = newMD scope grp vals
