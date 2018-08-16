@@ -18,6 +18,9 @@ PREFIX := /usr/local
 # we want to place built files.
 BUILD := build
 
+# DESTDIR works in the normal way, defaulting to '/'
+DESTDIR := /
+
 ###############################################################################
 # SECTION 2: Configuring with Cabal
 ###############################################################################
