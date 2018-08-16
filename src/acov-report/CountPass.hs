@@ -3,12 +3,14 @@ module CountPass
   , ModCoverage(..)
   , ScopeCoverage(..)
   , GroupCoverage(..)
-  , GroupCount(..)
+  , BitsCov(..)
   , covCount
   , run
   ) where
 
+import Control.Exception.Base (assert)
 import Data.Bits
+import qualified Data.IntSet as IS
 import qualified Data.Set as Set
 import qualified Data.Foldable as Foldable
 
@@ -25,29 +27,33 @@ import Parser (symName)
   we need to iterate through, looking for which bits have been seen
   set and cleared.
 -}
-cbCount :: Int -> Set.Set Int -> Set.Set Int -> Count
+cbCount :: Int -> IS.IntSet -> IS.IntSet -> Count
 cbCount w ones zeros = mkCount hits total
-  where hits = Set.size ones + Set.size zeros
+  where hits = IS.size ones + IS.size zeros
         total = toInteger (2 * w)
 
-cbMissing :: Int -> Set.Set Int -> Set.Set Int -> [(Int, Bool)]
-cbMissing w ones zeros = missing True ones ++ missing False zeros
-  where missing isOne vals =
-          map (\ i -> (i, isOne)) $ filter (bad vals) [0..(w - 1)]
-        bad vals i = not $ Set.member i vals
+-- BitsCov w hits partial misses
+--
+--   where w is the width of the record, hits is the set of valid bits
+--   that hit, partial is true if misses is not the whole lot and
+--   misses is the first bit indices that miss.
+data BitsCov = BitsCov Int IS.IntSet Bool [Int]
 
-data GroupCount a = GroupCount Count a
+mkBC :: Int -> IS.IntSet -> BitsCov
+mkBC w hits = seq misses $ BitsCov w hits partial misses
+  where partial = assert (IS.size hits <= w) $
+                  (w - IS.size hits) > 10
+        misses = take 10 $ filter miss [0..(w - 1)]
+        miss i = not $ IS.member i hits
 
-gcCount :: GroupCount a -> Count
-gcCount (GroupCount count _) = count
-
-data GroupCoverage = RecCov (GroupCount ([W.Record], [[Integer]]))
-                   | BRecCov (GroupCount (W.BitsRecord, [(Int, Bool)]))
+data GroupCoverage = RecCov Count [W.Record] [[Integer]]
+                   -- BRecCov zeros ones
+                   | BRecCov Count BitsCov BitsCov
                    | BadScope
 
 covCount :: GroupCoverage -> Maybe Count
-covCount (RecCov gc) = Just $ gcCount gc
-covCount (BRecCov gc) = Just $ gcCount gc
+covCount (RecCov c r vs) = Just $ c
+covCount (BRecCov c bc0 bc1) = Just $ c
 covCount BadScope = Nothing
 
 {-
@@ -57,18 +63,18 @@ covCount BadScope = Nothing
 -}
 countGroup' :: M.GroupCoverage -> GroupCoverage
 
-countGroup' (M.Recs (M.RecsCoverage recs vals)) =
-  RecCov (GroupCount cnt (recs, misses))
+countGroup' (M.Recs (M.RecsCoverage recs vals)) = RecCov cnt recs misses
   where cnt = crossCount vals cross
         cross = mkCross $ map (\ r -> (W.recWidth r, W.recClist r)) recs
         nToTake = fromInteger (min (countMissed cnt) 10)
         misses = crossMisses nToTake vals cross
 
 countGroup' (M.BRec (M.BRecCoverage brec (ones, zeros))) =
-  BRecCov (GroupCount cnt (brec, bads))
-  where w = W.brWidth brec
-        cnt = cbCount w ones zeros
-        bads = take 10 $ cbMissing w ones zeros
+  BRecCov cnt bc0 bc1
+  where cnt = cbCount w ones zeros
+        w = W.brWidth brec
+        bc0 = mkBC w ones
+        bc1 = mkBC w zeros
 
 countGroup' M.BadScope = BadScope
 

@@ -23,6 +23,7 @@ import Data.Array
 import Data.Bits
 import qualified Data.Foldable as Foldable
 import Data.Functor ((<$>))
+import qualified Data.IntSet as IS
 import qualified Data.Map.Strict as Map
 import Data.Maybe (catMaybes)
 import qualified Data.Set as Set
@@ -68,7 +69,7 @@ mergeScope mod scope sd =
     mapM (mergeGrp scope sd) (zip [0..] (W.modGroups mod))
 
 data RecsCoverage = RecsCoverage [W.Record] (Set.Set Integer)
-data BRecCoverage = BRecCoverage W.BitsRecord (Set.Set Int, Set.Set Int)
+data BRecCoverage = BRecCoverage W.BitsRecord (IS.IntSet, IS.IntSet)
 
 data GroupCoverage = Recs RecsCoverage
                    | BRec BRecCoverage
@@ -103,10 +104,10 @@ takeBitIdx width bit =
     Right $ Just $ fromInteger bit
 
 takeBitIndices :: Int -> Set.Set Integer -> Set.Set Integer ->
-                  Either String (Set.Set Int, Set.Set Int)
+                  Either String (IS.IntSet, IS.IntSet)
 takeBitIndices w ones zeros = liftA2 (,) (get ones) (get zeros)
   where get vals = do { ints' <- mapM (takeBitIdx w) (Set.toAscList vals)
-                      ; return $ Set.fromAscList $ catMaybes ints'
+                      ; return $ IS.fromAscList $ catMaybes ints'
                       }
 
 mergeGrp :: String -> Raw.ScopeData -> (Int, W.Group) ->

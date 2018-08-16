@@ -1,0 +1,31 @@
+body {
+    padding: 10px;
+}
+
+tr.partialmask {
+    /* Peach */
+    background-color: #FFE5B4;
+}
+
+tr.fullmask {
+    /* Tea green */
+    background-color: #D0F0C0;
+}
+
+td.bitmask {
+    font-family: mono;
+}
+
+table.missed-bits td {
+    padding-left: 1em;
+    padding-right: 1em;
+}
+
+table.missed-bits {
+    border-collapse: collapse;
+}
+
+table.missed-bits tr {
+    border-top: 1px solid grey;
+    border-bottom: 1px solid grey;
+}

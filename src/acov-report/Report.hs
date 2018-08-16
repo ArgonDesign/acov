@@ -3,6 +3,7 @@ module Report
   ) where
 
 import Control.Exception.Base
+import qualified Data.IntSet as IS
 import Data.List
 import System.IO
 
@@ -13,6 +14,8 @@ import Time (stringTime)
 import Parser (symName)
 import qualified Width as W
 import CountPass
+
+import Numeric (showHex)
 
 report :: Handle -> Coverage -> IO [FilePath]
 report h cov =
@@ -72,14 +75,12 @@ showMiss recs vals =
     map (\ (n, v) -> n ++ "=" ++ show v) (zip names vals)
   where names = map (symName . rangedData . W.recSym) recs
 
-showMissBit :: (Int, Bool) -> String
-showMissBit (i, b) = "bit " ++ show i ++ (if b then " set" else " clear")
-
 wrapTag :: String -> String -> String
 wrapTag tag str = "<" ++ tag ++ ">" ++ str ++ "</" ++ tag ++ ">"
 
-reportMisses :: Handle -> GroupCoverage -> IO ()
-reportMisses h (RecCov (GroupCount count (recs, missing))) =
+-- Report missed items for a cross record
+reportMisses :: Handle -> Count -> [W.Record] -> [[Integer]] -> IO ()
+reportMisses h count recs missing =
   assert (not $ null $ missing) $
   put ("<p>" ++ tag ++ show (length missing) ++
         " misses:</p>" ++
@@ -98,37 +99,72 @@ reportMisses h (RecCov (GroupCount count (recs, missing))) =
           else if first then wrapTag "span" $ showMiss recs e
           else ", " ++ (wrapTag "span" $ showMiss recs e)
 
-reportMisses h (BRecCov (GroupCount count (brec, bads))) =
-  assert (not $ null $ bads) $
-  put ("<p>" ++ tag ++ show (length bads) ++
-        " misses:</p>" ++
-        "<p class='misses'>") >>
-  rptMiss True (head bads) >>
-  mapM_ (rptMiss False) (tail bads) >>
-  put "</p>"
-  where put = hPutStr h
-        partial = countMissed count > toInteger (length bads)
-        tag = if partial then "First " else ""
-        rptMiss first e =
-          put $
-          (if first then "" else ", ") ++
-          (wrapTag "span" $ showMissBit e)
-
-reportMisses h BadScope =
-  error "We shouldn't try to report misses for an ignored count."
-
-reportGrp :: Handle -> (String, GroupCoverage) -> IO ()
-reportGrp h (name, gc) =
-  do { put "<section class=\"group\">"
-     ; case covCount gc of
-         Nothing ->
-           put (wrapTag "h4" $ name ++ " (ignored as scope doesn't match)")
-         Just count ->
-           put (wrapTag "h4" $ name ++ " (" ++ showCount count ++ ")") >>
-           if countFull count then
-             return ()
-           else
-             reportMisses h gc
-     ; put "</section>"
+-- Report missed bits for a "cover bits" record
+reportBits :: Handle -> BitsCov -> BitsCov -> IO ()
+reportBits h bc0 bc1 =
+  do { put "<table class='missed-bits'>"
+     ; reportBitsLine h "Zeros" bc0
+     ; reportBitsLine h "Ones" bc1
+     ; put "</table>"
      }
   where put = hPutStr h
+
+reportBitsLine :: Handle -> String -> BitsCov -> IO ()
+reportBitsLine h name (BitsCov w hits partial misses) =
+  do { put ("<tr class='" ++ rowclass ++ "'><td>" ++
+            name ++ " mask</td><td class='bitmask'>0x")
+     ; reportHex h w hits
+     ; put $ "</td><td>"
+     ; if null misses then
+         return ()
+       else
+         put "missing bits: " >>
+         rptMiss True (head misses) >>
+         mapM_ (rptMiss False) (tail misses) >>
+         put (if partial then ", ..." else "")
+     ; put "</td></tr>"
+     }
+  where put = hPutStr h
+        rowclass = (if null misses then "full" else "partial") ++ "mask"
+        rptMiss first bit = put $
+                            (if first then "" else ", ") ++
+                            show bit
+
+reportHex :: Handle -> Int -> IS.IntSet -> IO ()
+reportHex h w hits = mapM_ reportHC (reverse [0..(nchars - 1)])
+  where nchars = quot (w + 3) 4
+        reportHC k = hPutStr h $ showHex (mask $ 4 * k) ""
+        mask bit0 = (ifbit 1 (0 + bit0)) +
+                    (ifbit 2 (1 + bit0)) +
+                    (ifbit 4 (2 + bit0)) +
+                    (ifbit 8 (3 + bit0))
+        ifbit n b = if IS.member b hits then n else 0
+
+reportGrp :: Handle -> (String, GroupCoverage) -> IO ()
+reportGrp h (name, cov) =
+  put "<section class=\"group\">" >>
+  put (grpHeader name cov) >>
+  reportGrpBody h cov >>
+  put "</section>"
+  where put = hPutStr h
+
+grpHeader :: String -> GroupCoverage -> String
+grpHeader name gc = wrapTag "h4" $ name ++ " (" ++ fill (covCount gc) ++ ")"
+  where fill Nothing = "ignored as scope doesn't match"
+        fill (Just count) = showCount count
+
+reportGrpBody :: Handle -> GroupCoverage -> IO ()
+
+reportGrpBody h (RecCov count recs missing) =
+  if countFull count then
+    return ()
+  else
+    reportMisses h count recs missing
+
+reportGrpBody h (BRecCov count bc0 bc1) =
+  if countFull count then
+    return ()
+  else
+    reportBits h bc0 bc1
+
+reportGrpBody h BadScope = return ()
