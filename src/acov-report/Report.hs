@@ -65,39 +65,28 @@ reportScope h singleScope sc =
      }
   where put = hPutStr h
 
-showMiss :: [W.Record] -> [Integer] -> String
-showMiss recs vals =
-  assert (not $ null vals) $
-  if length vals == 1 then show (head vals)
-  else
-    assert (length names == length vals) $
-    intercalate ", " $
-    map (\ (n, v) -> n ++ "=" ++ show v) (zip names vals)
-  where names = map (symName . rangedData . W.recSym) recs
-
-wrapTag :: String -> String -> String
-wrapTag tag str = "<" ++ tag ++ ">" ++ str ++ "</" ++ tag ++ ">"
-
 -- Report missed items for a cross record
 reportMisses :: Handle -> Count -> [W.Record] -> [[Integer]] -> IO ()
 reportMisses h count recs missing =
   assert (not $ null $ missing) $
-  put ("<p>" ++ tag ++ show (length missing) ++
-        " misses:</p>" ++
-        (if ul then "<ul class='misses'>"
-          else "<p class='misses'>")) >>
-  rptMiss True (head missing) >>
-  mapM_ (rptMiss False) (tail missing) >>
-  put (if ul then "</ul>" else "</p>")
+  put "<table class='missed-recs'><thead><tr>" >>
+  mapM_ th recs >>
+  put "</tr></thead><tbody>" >>
+  mapM_ tr missing >>
+  foot >>
+  put "</tbody></table>"
   where put = hPutStr h
-        partial = countMissed count > toInteger (length missing)
-        tag = if partial then "First " else ""
-        ul = length recs > 1
-        rptMiss first e =
-          put $
-          if ul then wrapTag "li" $ showMiss recs e
-          else if first then wrapTag "span" $ showMiss recs e
-          else ", " ++ (wrapTag "span" $ showMiss recs e)
+        nhits = length missing
+        nfields = length (head missing)
+        th r = put $ "<th>" ++ (symName $ rangedData $ W.recSym r) ++ "</th>"
+        tr miss = put "<tr>" >> mapM_ td miss >> put "</tr>"
+        td val = put $ "<td>" ++ show val ++ "</td>"
+        foot = if countMissed count <= toInteger nhits
+               then return ()
+               else put "<tr class='foot'>" >>
+                    mapM_ dotsTD [1..nfields] >>
+                    put "</tr>"
+        dotsTD _ = put "<td>...</td>"
 
 -- Report missed bits for a "cover bits" record
 reportBits :: Handle -> BitsCov -> BitsCov -> IO ()
@@ -149,7 +138,7 @@ reportGrp h (name, cov) =
   where put = hPutStr h
 
 grpHeader :: String -> GroupCoverage -> String
-grpHeader name gc = wrapTag "h4" $ name ++ " (" ++ fill (covCount gc) ++ ")"
+grpHeader name gc = "<h4>" ++ name ++ " (" ++ fill (covCount gc) ++ ")</h4>"
   where fill Nothing = "ignored as scope doesn't match"
         fill (Just count) = showCount count
 

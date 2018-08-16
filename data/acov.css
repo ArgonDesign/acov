@@ -3,17 +3,19 @@ body {
 }
 
 tr.partialmask {
-    /* Peach */
-    background-color: #FFE5B4;
+    background-color: #FFEAC2; /* Light peach */
 }
 
 tr.fullmask {
-    /* Tea green */
-    background-color: #D0F0C0;
+    background-color: #D0F0C0; /* Tea green */
 }
 
 td.bitmask {
     font-family: mono;
+}
+
+table.missed-bits {
+    margin-left: 1em;
 }
 
 table.missed-bits td {
@@ -28,4 +30,52 @@ table.missed-bits {
 table.missed-bits tr {
     border-top: 1px solid grey;
     border-bottom: 1px solid grey;
+}
+
+table.missed-recs {
+    margin-left: 1em;
+}
+
+table.missed-recs tr {
+    display: block;
+    float: left;
+}
+
+table.missed-recs tbody, table.missed-recs thead {
+    display: inline-block;
+}
+
+table.missed-recs th {
+    display: block;
+    text-align: right;
+    padding-right: 0.5em;
+    border-right: 1px solid grey;
+    font-weight: 400;
+    font-style: italic;
+}
+
+table.missed-recs td {
+    display: block;
+    padding-left: 0.25em;
+    padding-right: 0.25em;
+}
+
+table.missed-recs tbody tr:nth-child(odd) {
+    background-color: #FFEAC2; /* Light peach */
+}
+
+table.missed-recs tbody tr:nth-child(even) {
+    background-color: #FFF3DB; /* Even lighter peach */
+}
+
+table.missed-recs thead tr {
+    background-color: #FFF3DB; /* Even lighter peach */
+}
+
+table.missed-recs tbody tr {
+    margin-right: 2px;
+}
+
+table.missed-recs tbody tr.foot {
+    background-color: white;
 }
