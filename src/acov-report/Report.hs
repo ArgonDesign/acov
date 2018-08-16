@@ -14,10 +14,12 @@ import Parser (symName)
 import qualified Width as W
 import CountPass
 
-report :: Handle -> Coverage -> IO ()
+report :: Handle -> Coverage -> IO [FilePath]
 report h cov =
   do { time <- stringTime
-     ; put ("<html><head><title>Coverage report</title></head><body>\
+     ; put ("<html><head><title>Coverage report</title>\
+            \<link rel='stylesheet' type='text/css' href='acov.css'/>\
+            \</head><body>\
             \<h1>Coverage report</h1>\
             \<p>Coverage based on " ++
             show (covTests cov) ++
@@ -26,6 +28,7 @@ report h cov =
      ; put ("</p><section class=\"modules\"><h1>Modules</h1>")
      ; mapM_ (reportMod h) (covMods cov)
      ; put "</section></body></html>"
+     ; return ["data/acov.css"]
      }
   where put = hPutStr h
         mods = covMods cov

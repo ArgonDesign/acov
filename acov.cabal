@@ -3,17 +3,16 @@
 
 name:                acov
 version:             0.1.0.0
--- synopsis:
--- description:
 license:             BSD3
 license-file:        LICENSE
 author:              Rupert Swarbrick
 maintainer:          rupert.swarbrick@argondesign.com
--- copyright:
+copyright:           Argon Design
 category:            Development
 build-type:          Custom
 extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
+data-files:          data/acov.css
 
 library
   exposed-modules:     Ranged
@@ -87,6 +86,7 @@ executable acov-report
                      , Time
                      , Report
                      , BuildVersion
+                     , Paths_acov
   build-depends:       base >=4.6.0.1 && <4.11
                      , array >= 0.4
                      , containers >= 0.5

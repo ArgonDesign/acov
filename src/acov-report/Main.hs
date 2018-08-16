@@ -3,12 +3,14 @@ module Main where
 import Control.Monad
 import Data.Monoid ((<>))
 import Options.Applicative
-import System.Directory (createDirectoryIfMissing)
-import System.FilePath ((</>))
+import System.Directory (createDirectoryIfMissing, copyFile)
+import System.FilePath ((</>), takeFileName)
 import System.Exit
 import System.IO
 
 import BuildVersion (gitDescribe)
+import Paths_acov (getDataFileName)
+
 import qualified Raw
 import qualified Merge
 import qualified CountPass
@@ -59,10 +61,16 @@ run args = do { (hash, mods) <- Frontend.run (input args)
               ; cov <- readCoverage hash
               ; mcov <- reportFatal (Merge.mergeCoverage mods cov)
               ; createDirectoryIfMissing False (odir args)
-              ; withFile (odir args </> "index.html") WriteMode
-                (\ h -> report h $ CountPass.run mcov)
+              ; dataFiles <- withFile (odir args </> "index.html") WriteMode
+                             (\ h -> report h $ CountPass.run mcov)
+              ; mapM_ (installDataFile (odir args)) dataFiles
               ; exitSuccess
               }
+
+installDataFile :: FilePath -> FilePath -> IO ()
+installDataFile dst src = do { src' <- getDataFileName src
+                             ; copyFile src' (dst </> (takeFileName src))
+                             }
 
 main :: IO ()
 main = execParser mainInfo >>= run
