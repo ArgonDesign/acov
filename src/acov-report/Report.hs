@@ -23,12 +23,12 @@ report h cov =
      ; put ("<html><head><title>Coverage report</title>\
             \<link rel='stylesheet' type='text/css' href='acov.css'/>\
             \</head><body>\
-            \<h1>Coverage report</h1>\
+            \<section class='summary'><h1>Coverage report</h1>\
             \<p>Coverage based on " ++
             show (covTests cov) ++
             " tests; report generated at " ++ time ++ "</p><p>")
      ; put (showCounts "modules" (covCounts cov))
-     ; put ("</p><section class=\"modules\"><h1>Modules</h1>")
+     ; put ("</p></section><section class=\"modules\">")
      ; mapM_ (reportMod h) (covMods cov)
      ; put "</section></body></html>"
      ; return ["data/acov.css"]
@@ -38,7 +38,7 @@ report h cov =
 
 reportMod :: Handle -> ModCoverage -> IO ()
 reportMod h mc =
-  do { put $ "<section class=\"module\"><h2>Module " ++ (mcName mc) ++ "</h2>"
+  do { put $ "<section class=\"module\"><h1>Module " ++ (mcName mc) ++ "</h1>"
      ; if null scopes then
          put "<p>No scopes seen.</p>"
        else
