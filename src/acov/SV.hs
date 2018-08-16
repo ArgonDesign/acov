@@ -36,8 +36,8 @@ writeGroup h syms (idx, grp) =
   put ("  covergroup " ++ name ++ " " ++
        showGuards syms (W.grpGuards grp) ++ ";\n") >>
   writeRecs h syms idx (W.grpRecs grp) >>
-  put "  endgroup\n\n" >>
-  put ("  " ++ name ++ " " ++ name ++ "_Inst = new;\n")
+  put "  endgroup\n" >>
+  put ("  " ++ name ++ " " ++ name ++ "_Inst = new;\n\n")
   where put = hPutStr h
         name = "group_" ++ show idx
 
@@ -73,7 +73,7 @@ writeRecs h syms idx (Left recs) =
 
 writeRecs h syms idx (Right brec) = mapM_ f [0..(width - 1)]
   where f i = hPutStr h $
-              "    " ++ name ++ "_" ++ show i ++
+              "    " ++ name ++ "_bit_" ++ show i ++
               ": coverpoint " ++ wireBase ++ "_bit_" ++ show i ++ ";\n"
         width = W.brWidth brec
         name = P.symName $ rangedData $ W.brSym brec
@@ -96,7 +96,7 @@ writeRecWire h pST grpIdx record =
 writeRecCP :: Handle -> PortSyms -> Int -> W.Record -> IO ()
 writeRecCP h pST grpIdx record =
   put ("    " ++ recname ++ ": coverpoint " ++ wirename ++ " {\n") >>
-  put ("      bins x[] = {" ++ bins ++ "};\n") >>
+  put ("      bins " ++ wirename ++ "[] = {" ++ bins ++ "};\n") >>
   put ("    }\n")
   where put = hPutStr h
         recname = recName record
