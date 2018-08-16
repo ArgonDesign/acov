@@ -2,7 +2,7 @@
 
 module Ranged
   ( LCPos(..)
-  , LCRange(..)
+  , LCRange(..) , extendRange
   , Ranged(..) , rangedRange , rangedData , copyRange , wideRange
   ) where
 

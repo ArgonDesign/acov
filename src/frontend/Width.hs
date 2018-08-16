@@ -346,19 +346,37 @@ checkGuard symST guard =
          good ()
      }
 
+grpRange :: Group -> LCRange
+grpRange = recsRange . grpRecs
+  where recsRange (Left recs) =
+          assert (not $ null recs) $
+          foldr extendRange (recRange (head recs)) (map recRange (tail recs))
+        recsRange (Right brec) = rangedRange $ brExpr brec
+        recRange = rangedRange . recExpr
+
+checkGroupWidth :: Group -> ErrorsOr Group
+checkGroupWidth g = if w > 256 then
+                      bad1 $ Ranged (grpRange g) $
+                      "Recorded group has width " ++ show w ++
+                      ", which is more than 256 (the maximum width supported)."
+                    else
+                      good g
+  where w = grpWidth g
+
 readGroup :: SymbolTable (Ranged E.Slice) -> E.Group -> ErrorsOr Group
+
 readGroup symST (E.Group guards (Left recs) scopes) =
   do { recs' <- snd <$> (liftA2 (,)
                          (mapEO (checkGuard symST) guards)
                          (mapEO (takeRec symST) recs))
-     ; return $ Group guards (Left recs') scopes
+     ; checkGroupWidth $ Group guards (Left recs') scopes
      }
 
 readGroup symST (E.Group guards (Right (E.BitsRecord expr name)) scopes) =
   do { w <- snd <$> (liftA2 (,)
                       (mapEO (checkGuard symST) guards)
                       (exprWidth symST expr))
-     ; return $ Group guards (Right $ BitsRecord expr name w) scopes
+     ; checkGroupWidth $ Group guards (Right $ BitsRecord expr name w) scopes
      }
 
 readModule :: E.Module -> ErrorsOr Module
