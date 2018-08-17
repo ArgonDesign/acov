@@ -14,7 +14,7 @@ module RangeList
 
 import Control.Exception.Base
 import qualified Data.Map.Strict as Map
-import Data.Hashable
+import Hashable
 
 import IvlList
 
@@ -23,7 +23,7 @@ data RangeList = RangeList { rlLength :: Integer
                            }
 
 instance Hashable RangeList where
-  hashWithSalt n rl = hashWithSalt n $ Map.toAscList $ rlRanges rl
+  hash rl = hash $ Map.toAscList $ rlRanges rl
 
 rlToList :: RangeList -> [Integer]
 rlToList rl = concat $ Map.foldrWithKey f [] (rlRanges rl)

@@ -18,6 +18,7 @@ library
   exposed-modules:     Ranged
                      , ErrorsAnd
                      , ErrorsOr
+                     , Hashable
                      , Operators
                      , VInt
                      , CList
@@ -36,7 +37,6 @@ library
   build-depends:       base >=4.6.0.1 && <4.11
                      , array >= 0.4
                      , containers >= 0.5
-                     , hashable >= 1.2.1
                      , parsec >= 3.1.0
                      , transformers >= 0.3.0
   hs-source-dirs:      src/frontend

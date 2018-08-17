@@ -1,31 +1,28 @@
-{-# LANGUAGE DeriveGeneric #-}
-
 module Ranged
   ( LCPos(..)
   , LCRange(..) , extendRange
   , Ranged(..) , rangedRange , rangedData , copyRange , wideRange
   ) where
 
-import Data.Hashable
-import GHC.Generics (Generic)
+import Hashable
 
 data LCPos = LCPos Int Int
-  deriving (Show, Generic)
 
-instance Hashable LCPos
+instance Hashable LCPos where
+  hash (LCPos l c) = hashCombine (hash l) (hash c)
 
 data LCRange = LCRange LCPos LCPos
-  deriving (Show, Generic)
 
-instance Hashable LCRange
+instance Hashable LCRange where
+  hash (LCRange a b) = hashCombine (hash a) (hash b)
 
 extendRange :: LCRange -> LCRange -> LCRange
 extendRange (LCRange lc0 _) (LCRange _ lc1) = LCRange lc0 lc1
 
 data Ranged a = Ranged LCRange a
-  deriving (Show, Generic)
 
-instance Hashable a => Hashable (Ranged a)
+instance Hashable a => Hashable (Ranged a) where
+  hash (Ranged rng a) = hashCombine (hash rng) (hash a)
 
 rangedRange :: Ranged a -> LCRange
 rangedRange (Ranged rng _) = rng

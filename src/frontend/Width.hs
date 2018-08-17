@@ -1,5 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
-
 module Width
   ( run
   , Record(..)
@@ -22,8 +20,6 @@ import qualified Data.Foldable as F
 import Data.List (isInfixOf, intercalate)
 import qualified Data.Map.Strict as Map
 import Data.Maybe
-import Data.Hashable
-import GHC.Generics (Generic)
 
 import BuildVersion (gitDescribe)
 import qualified Expressions as E
@@ -34,6 +30,7 @@ import ErrorsOr
 import Operators
 import VInt
 import Ranged
+import Hashable
 import IvlList (makeIvlList)
 import RangeList (RangeList, rlRange, ivlListToRangeList)
 
@@ -48,25 +45,31 @@ data Record = Record { recExpr :: Ranged E.Expression
                      , recClist :: RangeList
                      , recWidth :: Int
                      }
-  deriving Generic
 
-instance Hashable Record
+instance Hashable Record where
+  hash (Record expr sym clist width) =
+    hashCombine
+    (hashCombine (hash expr) (hash sym))
+    (hashCombine (hash clist) (hash width))
 
 data BitsRecord = BitsRecord { brExpr :: Ranged E.Expression
                              , brSym :: Ranged P.Symbol
                              , brWidth :: Int
                              }
-  deriving Generic
 
-instance Hashable BitsRecord
+instance Hashable BitsRecord where
+  hash (BitsRecord expr sym width) =
+    hashCombine (hash expr)
+    (hashCombine (hash sym) (hash width))
 
 data Group = Group { grpGuards :: [Ranged E.Expression]
                    , grpScopes :: [String]
                    , grpRecs   :: Either [Record] BitsRecord
                    }
-  deriving Generic
 
-instance Hashable Group
+instance Hashable Group where
+  hash (Group guards scopes recs) =
+    hashCombine (hash guards) (hashCombine (hash scopes) (hash recs))
 
 grpWidth :: Group -> Int
 grpWidth g = case grpRecs g of
@@ -101,9 +104,10 @@ data Module = Module { modName :: Ranged P.Symbol
                      , modSyms :: SymbolTable (Ranged E.Slice)
                      , modGroups :: [Group]
                      }
-  deriving Generic
 
-instance Hashable Module
+instance Hashable Module where
+  hash (Module name syms groups) =
+    hashCombine (hash name) (hashCombine (hash syms) (hash groups))
 
 symBits :: SymbolTable (Ranged E.Slice) -> Symbol -> (Int, Int)
 symBits st sym =

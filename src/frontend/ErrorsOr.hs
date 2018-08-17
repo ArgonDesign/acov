@@ -19,7 +19,6 @@ import ErrorsAnd
 import Ranged
 
 newtype ErrorsOr a = ErrorsOr (Either [Ranged String] a)
-  deriving Show
 
 bad :: [Ranged String] -> ErrorsOr a
 bad errs = assert (not $ null errs)

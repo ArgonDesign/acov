@@ -1,5 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
-
 module VInt
   ( VInt
   , makeVInt , basicVInt
@@ -13,16 +11,17 @@ module VInt
 import Control.Exception.Base
 import Data.Bits
 import Data.Functor ((<$>))
-import Data.Hashable
 import Data.Maybe
-import GHC.Generics (Generic)
 
+import Hashable
 import Operators
 
 data VInt = VInt (Maybe Int) Bool Integer
-  deriving (Eq, Show, Generic)
+  deriving Eq
 
-instance Hashable VInt
+instance Hashable VInt where
+  hash (VInt w s n) =
+    hashCombine (hash w) (hashCombine (hash s) (hash n))
 
 basicVInt :: Integer -> VInt
 basicVInt n = VInt Nothing False n

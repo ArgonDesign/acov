@@ -1,5 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
-
 module Parser
   ( Symbol(..)
   , symName
@@ -23,9 +21,7 @@ import Control.Applicative ((<*))
 import Data.Char (digitToInt)
 import Data.Functor ((<$>))
 import Data.Functor.Identity (Identity)
-import Data.Hashable
 import Data.Maybe (fromMaybe)
-import GHC.Generics (Generic)
 import qualified Text.Parsec.Language as L
 import qualified Text.Parsec.Token as T
 import Text.Parsec
@@ -34,6 +30,7 @@ import Text.Parsec.Expr
 import Text.Parsec.Pos
 import Text.Parsec.String
 
+import Hashable
 import ErrorsOr
 import Ranged
 import Operators
@@ -62,12 +59,13 @@ import VInt
 
 -}
 newtype Symbol = Symbol String
-  deriving (Show, Eq, Ord, Generic)
+  deriving (Eq, Ord)
 
 symName :: Symbol -> String
 symName (Symbol name) = name
 
-instance Hashable Symbol
+instance Hashable Symbol where
+  hash = hash . symName
 
 data Module = Module (Ranged Symbol) [Ranged Port] [Ranged Statement]
 
@@ -189,7 +187,6 @@ integer = T.lexeme lexer
   non-negative integers.
 -}
 data Slice = Slice VInt VInt
-  deriving Show
 
 slice :: Parser Slice
 slice = (T.brackets lexer $
