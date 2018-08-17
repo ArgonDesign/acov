@@ -190,10 +190,8 @@ want the 32-bit version).
 If you followed the advice in the previous section, you'll also need
 to pass the preprocessor flag `FUNC_COV` to switch coverage on.
 
-If you want to use the SystemVerilog backend (because you're using an
-expensive simulator and you don't want to trust the DPI code and
-`acov-report`), you'll also need to pass the preprocessor flag
-`ACOV_SV`.
+If you want to use the SystemVerilog backend because the simulator
+supports it, you'll also need to pass the preprocessor flag `ACOV_SV`.
 
 If you run your testbench multiple times with different inputs, you
 need to make sure they run in separate directories because the DPI
