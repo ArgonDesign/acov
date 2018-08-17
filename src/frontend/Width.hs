@@ -61,8 +61,8 @@ data BitsRecord = BitsRecord { brExpr :: Ranged E.Expression
 instance Hashable BitsRecord
 
 data Group = Group { grpGuards :: [Ranged E.Expression]
+                   , grpScopes :: [String]
                    , grpRecs   :: Either [Record] BitsRecord
-                   , grpScopes :: Maybe String
                    }
   deriving Generic
 
@@ -84,10 +84,8 @@ grpIsCovBits g = case grpRecs g of
                    Right _ -> True
 
 grpMatchesScope :: Group -> String -> Bool
-grpMatchesScope g scope =
-  case grpScopes g of
-    Nothing -> True
-    Just str -> isInfixOf str scope
+grpMatchesScope g scope = all f (grpScopes g)
+  where f pat = isInfixOf pat scope
 
 grpName :: Group -> String
 grpName g =
@@ -365,18 +363,18 @@ checkGroupWidth g = if w > 256 then
 
 readGroup :: SymbolTable (Ranged E.Slice) -> E.Group -> ErrorsOr Group
 
-readGroup symST (E.Group guards (Left recs) scopes) =
+readGroup symST (E.Group guards scopes (Left recs)) =
   do { recs' <- snd <$> (liftA2 (,)
                          (mapEO (checkGuard symST) guards)
                          (mapEO (takeRec symST) recs))
-     ; checkGroupWidth $ Group guards (Left recs') scopes
+     ; checkGroupWidth $ Group guards scopes (Left recs')
      }
 
-readGroup symST (E.Group guards (Right (E.BitsRecord expr name)) scopes) =
+readGroup symST (E.Group guards scopes (Right (E.BitsRecord expr name))) =
   do { w <- snd <$> (liftA2 (,)
                       (mapEO (checkGuard symST) guards)
                       (exprWidth symST expr))
-     ; checkGroupWidth $ Group guards (Right $ BitsRecord expr name w) scopes
+     ; checkGroupWidth $ Group guards scopes (Right $ BitsRecord expr name w)
      }
 
 readModule :: E.Module -> ErrorsOr Module

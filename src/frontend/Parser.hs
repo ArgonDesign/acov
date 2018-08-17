@@ -6,9 +6,8 @@ module Parser
   , Module(..)
   , Port(..)
   , Statement(..)
+  , Block(..)
   , RecordStmt(..)
-  , WhenStmt(..)
-  , GroupStmt(..)
   , Expression(..)
   , Cover(..)
   , Slice(..)
@@ -46,17 +45,19 @@ import VInt
     // A module to collect xxx coverage
     module xxx (foo [10:0], bar [19:0], baz [1:0], qux) {
        when (foo [0]) {
-         group {
-           record foo cover {0..10, 12, 2047};
-           record foo + bar[10:0] as foobar cover {0, 1};
-         } match_scopes "boo"
+         in "boo" {
+           group {
+             record foo cover {0..10, 12, 2047};
+             record foo + bar[10:0] as foobar cover {0, 1};
+           }
+         }
        }
 
        record baz cover bits;
-       record qux as qxx match_scopes "cabbage";
+       in "cabbage" { record qux as qxx; }
     }
 
-  In the parsing stage, we allow group {} and when () {} to nest
+  In the parsing stage, we allow group {}, in {} and when {} to nest
   arbitrarily. We'll tighten stuff up in the next pass.
 
 -}
@@ -72,21 +73,17 @@ data Module = Module (Ranged Symbol) [Ranged Port] [Ranged Statement]
 
 data Port = Port Symbol (Maybe (Ranged Slice))
 
+data Block a = Block a [Ranged Statement]
+
 data RecordStmt = RecordStmt { recExpr   :: Ranged Expression
                              , recSym    :: Maybe (Ranged Symbol)
                              , recCov    :: Maybe Cover
-                             , recScopes :: Maybe String
                              }
 
-data WhenStmt = WhenStmt { whenGuard :: Ranged Expression
-                         , whenStmts :: [Ranged Statement]
-                         }
-
-data GroupStmt = GroupStmt { grpStmts :: [Ranged Statement]
-                           , grpScopes :: Maybe String
-                           }
-
-data Statement = Record RecordStmt | When WhenStmt | Group GroupStmt
+data Statement = Record RecordStmt
+               | When (Block (Ranged Expression))
+               | In (Block String)
+               | Group (Block ())
 
 data Cover = CoverList [(Ranged Integer, Ranged Integer)]
            | CoverBits
@@ -113,12 +110,12 @@ data Expression = ExprAtom Atom
 reservedNames :: [String]
 reservedNames = [ "module"
                 , "when"
+                , "in"
                 , "group"
                 , "record"
                 , "as"
                 , "cover"
                 , "bits"
-                , "match_scopes"
                 ]
 
 reservedOpNames = [ ";" , "," , ":" , "=" , ".."
@@ -328,24 +325,25 @@ expression = do { a <- expression' <?> "expression"
 statement :: Parser (Ranged Statement)
 statement =
   rangedParse $
-  ((group <|> when <|> record) <?> "statement")
+  ((group <|> when <|> record <|> inStmt) <?> "statement")
 
-scopes :: Parser String
-scopes = T.reserved lexer "match_scopes" >> T.stringLiteral lexer
+block :: String -> Parser a -> (Block a -> Statement) ->
+         Parser Statement
+block name parseGuard constructor =
+  do { T.reserved lexer name
+     ; guard <- parseGuard
+     ; stmts <- T.braces lexer (many1 statement)
+     ; return $ constructor $ Block guard stmts
+     }
 
 group :: Parser Statement
-group = do { T.reserved lexer "group"
-           ; stmts <- T.braces lexer (many1 statement)
-           ; sc <- optionMaybe scopes
-           ; return $ Group (GroupStmt stmts sc)
-           }
+group = block "group" (return ()) Group
 
 when :: Parser Statement
-when = do { T.reserved lexer "when"
-           ; guard <- T.parens lexer expression
-           ; stmts <- T.braces lexer (many1 statement)
-           ; return $ When (WhenStmt guard stmts)
-           }
+when = block "when" (T.parens lexer expression) When
+
+inStmt :: Parser Statement
+inStmt = block "in" (T.stringLiteral lexer) In
 
 coverpoint :: Parser (Ranged Integer, Ranged Integer)
 coverpoint = do { a <- rangedParse (toInteger <$> integer)
@@ -365,9 +363,8 @@ record = do { T.reserved lexer "record"
             ; e <- expression
             ; name <- optionMaybe (T.reserved lexer "as" >> rangedParse sym)
             ; clist <- optionMaybe cover
-            ; sc <- optionMaybe scopes
             ; semi
-            ; return $ Record (RecordStmt e name clist sc) }
+            ; return $ Record (RecordStmt e name clist) }
 
 module' :: Parser Module
 module' = do { T.reserved lexer "module"

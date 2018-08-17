@@ -4,12 +4,7 @@
 * v0.2
   - Coverage RTL is now written to foo_coverage.sv rather than foo_coverage.v
   - SystemVerilog coverage is now based on ACOV_SV rather than ACOV_SVA
-  - The input language has gained a match_scopes keyword
-
-    This can be appended to either a record statement not in a group or to a
-    group. A scope whose name does not contain the associated string is just
-    ignored. So 'record xxx match_scopes "foo"' means to record the value of
-    xxx and expect to see every value. However, a scope that doesn't contain
-    "foo" as a substring needn't see anything.
+  - The input language has gained an "in" keyword. See README.md for details
+  - There is now documentation in README.md
 * v0.1
   - Initial release

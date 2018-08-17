@@ -246,7 +246,7 @@ single bit and `c` is two bits wide.
 To record a single signal, use a `record` statement. It has several
 optional keywords. The full form looks like this:
 
-    record a + b as sum cover {1,2,3} match_scopes "foo";
+    record a + b as sum cover {1,2,3};
 
 The only required argument for `record` is the expression to be
 recorded. This is expressed in standard Verilog syntax, but the width
@@ -286,13 +286,6 @@ means something akin to toggle coverage: we want to see each bit of
 the signal equal to zero and equal to one. For a signal of width W,
 specifying `cover bits` gives `2 * W` bins.
 
-If you have two different instances of a module in your design and
-bind to them as suggested earlier in the document, you may have a
-problem because you expect different coverage points for the different
-instances. To support this, `match_scopes "foo"` means we will only
-collect coverage for this record if the instance scope contains the
-substring "foo".
-
 ### Groups
 
 To specify a cross of multiple signals, use the `group` keyword. For
@@ -305,21 +298,11 @@ example:
 
 This specifies a 2 by 2 cross with 4 bins in total.
 
-A group can use the `match_scopes` keyword:
-
-    group {
-      ...
-    } match_scopes "foo"
-
-with the same meaning as for records.
-
-Record statements in groups are slightly constrained. They cannot use
-the `match_scopes` keyword (it wouldn't make sense unless they all had
-the same value, so you must hoist it up to the group level). They also
-cannot use `cover bits` to specify the expected coverage. This is
-because you can hit multiple bins with one record when using `cover
-bits` and it's a little unclear what a cross between that and another
-record would mean.
+Record statements in groups are slightly constrained: they cannot use
+`cover bits` to specify the expected coverage. This is because you can
+hit multiple bins with one record when using `cover bits` and it's a
+little unclear what a cross between that and another record would
+mean.
 
 ### When
 
@@ -329,9 +312,9 @@ happens. The signal is always recorded on a posedge of `clk` when
 coverpoints), but you can further restrict when the record happens
 with the `when` keyword:
 
-    when start_job {
+    when (start_job) {
       record job_size;
-      when job_size > 4'd10 {
+      when (job_size > 4'd10) {
         record tiredness;
       }
     }
@@ -341,3 +324,24 @@ parameter) when the job is started, rather than every cycle. Maybe
 there is also a `tiredness` parameter, which only matters when the
 `job_size` is bigger than 10. Note that the `when` blocks can be
 nested.
+
+### In
+
+If you have two different instances of a module in your design and
+bind to them as suggested earlier in the document, you may have a
+problem because you expect different coverage points for the different
+instances.
+
+To avoid this problem, use `in` blocks:
+
+    in "foo" {
+      record a;
+      in "bar" {
+        record b;
+      }
+    }
+
+This means that we will only require coverage for the signal `a` when
+the instance scope has `"foo"` as a substring. We'll only require
+coverage for the signal `b` when the instance scope also has `"bar"`
+as a substring.
