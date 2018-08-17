@@ -1,7 +1,7 @@
 #+OPTIONS: ^:nil
 #+STARTUP: showeverything
 
-* NEXT
+* v0.2.1
   - The generated hash values should no longer depend on the library versions
     against which ACov was built.
 * v0.2

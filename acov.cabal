@@ -2,7 +2,7 @@
 -- see http://haskell.org/cabal/users-guide/
 
 name:                acov
-version:             0.2.0.0
+version:             0.2.1.0
 license:             BSD3
 license-file:        LICENSE
 author:              Rupert Swarbrick
