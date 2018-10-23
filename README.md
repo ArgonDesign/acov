@@ -24,7 +24,7 @@ The ultra-condensed description of how to use it is:
 
 In slightly more detail, the initial script is written in a sort of
 pseudo-Verilog. This defines several modules, each of which will be
-turned into an actual Verilog module running `acov`. The code in these
+turned into an actual Verilog module by running `acov`. The code in these
 auto-generated modules contains DPI calls to a library (also included
 with ACov) called `libacovdpi.so`. These calls basically say "Hey,
 I've just seen the following coverage group with the following value".
@@ -52,6 +52,9 @@ An ACov input file might look like this:
        record qux as qxx;
        record bar cover bits;
     }
+
+Where the inputs `foo`, `bar`, etc. correspond to internal or external 
+signals of the module `xxx` that you want to cover.
 
 This will create a Verilog module called `xxx_coverage`, of the
 following form:
@@ -283,6 +286,12 @@ Instead of giving a cover list, you can specify `cover bits`. This
 means something akin to toggle coverage: we want to see each bit of
 the signal equal to zero and equal to one. For a signal of width W,
 specifying `cover bits` gives `2 * W` bins.
+
+Further `record` examples:
+
+    record c == 4'd10 as c_ten; // where c is 4-bit
+    record d[1:0] as d_LSBs cover {0..2};
+    record e[8:6] > 3'd5 && |f as e_thresh cover {1};
 
 ### Groups
 
