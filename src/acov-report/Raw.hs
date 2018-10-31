@@ -226,26 +226,29 @@ updGrp :: [Integer] -> Maybe IntegerSet -> IntegerSet
 updGrp vals Nothing = Set.fromList vals
 updGrp vals (Just vals') = Set.fromList vals <> vals'
 
-takeScript :: Coverage -> Int ->
+takeScript :: Coverage -> Maybe Int ->
               (Integer, [Statement]) -> Either String Coverage
 takeScript cov hash (hash', stmts) =
-  do { if toInteger hash /= hash' then
-         Left ("Hash code in file is 0x" ++ showHex hash' "" ++
-               ", which doesn't match the expected 0x" ++ showHex hash "" ++
-               ".")
-       else
-         Right ()
+  do { case hash of
+         Nothing -> Right ()
+         Just h ->
+           if toInteger h /= hash' then
+             Left ("Hash code in file is 0x" ++ showHex hash' "" ++
+                   ", which doesn't match the expected 0x" ++ showHex h "" ++
+                   ".")
+           else
+             Right ()
      ; cov' <- snd <$> foldM takeStatement ((Nothing, Nothing), cov) stmts
      ; return $ cov' { covCount = covCount cov + 1 }
      }
 
-takeContents :: Coverage -> Int -> FilePath -> String -> (Coverage, Maybe String)
+takeContents :: Coverage -> Maybe Int -> FilePath -> String -> (Coverage, Maybe String)
 takeContents cov hash path contents =
   case parseScript path contents >>= takeScript cov hash of
     Left err -> (cov, Just $ show path ++ ": Ignoring file. " ++ err)
     Right cov' -> (cov', Nothing)
 
-updateCoverage :: Coverage -> Int -> FilePath -> IO (Coverage, Maybe String)
+updateCoverage :: Coverage -> Maybe Int -> FilePath -> IO (Coverage, Maybe String)
 updateCoverage cov hash path =
   do { res <- (CE.try $ readFile path) :: IO (Either CE.IOException String)
      ; return $ case res of

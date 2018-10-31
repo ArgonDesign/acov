@@ -21,6 +21,7 @@ import qualified Frontend
 data Args = Args
   { input :: FilePath
   , odir  :: FilePath
+  , ignoreHash :: Bool
   }
 
 mainArgs :: Parser Args
@@ -29,6 +30,7 @@ mainArgs = Args
                               help "Input file" )
            <*> argument str ( metavar "odir" <>
                               help "Output directory" )
+           <*> switch ( long "ignore-hash" <> help "Whether to ignore report hashes" )
 
 mainInfo :: ParserInfo Args
 mainInfo = info (mainArgs <**> helper)
@@ -47,7 +49,7 @@ reportFatal (Left err) = hPutStr stderr ("Error: " ++ err ++ "\n") >>
                        exitFailure
 reportFatal (Right a) = return a
 
-readCoverage :: Int -> IO Raw.Coverage
+readCoverage :: Maybe Int -> IO Raw.Coverage
 readCoverage hash =
   do { paths <- words <$> getContents
      ; if null paths then hPutStr stderr "Warning: No coverage files.\n"
@@ -58,7 +60,8 @@ readCoverage hash =
 
 run :: Args -> IO ()
 run args = do { (hash, mods) <- Frontend.run (input args)
-              ; cov <- readCoverage hash
+              ; cov <- readCoverage
+                       (if ignoreHash args then Nothing else Just hash)
               ; mcov <- reportFatal (Merge.mergeCoverage mods cov)
               ; createDirectoryIfMissing False (odir args)
               ; dataFiles <- withFile (odir args </> "index.html") WriteMode

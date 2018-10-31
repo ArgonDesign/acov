@@ -1,6 +1,11 @@
 #+OPTIONS: ^:nil
 #+STARTUP: showeverything
 
+* v0.2.2
+  - Allow building with GHC 8.4
+  - Add an --ignore-hash argument. This is really for development (someone
+    gives us a log and acov file and we want to hack on the source and re-run
+    the reporter without having to hack the hash in the log every time).
 * v0.2.1
   - The generated hash values should no longer depend on the library versions
     against which ACov was built.
