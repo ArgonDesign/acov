@@ -69,7 +69,11 @@ mergeScope mod scope sd =
     mapM (mergeGrp scope sd) (zip [0..] (W.modGroups mod))
 
 data RecsCoverage = RecsCoverage [W.Record] (Set.Set Integer)
-data BRecCoverage = BRecCoverage W.BitsRecord (IS.IntSet, IS.IntSet)
+
+data BRecCoverage = BRecCoverage { brcBitsRecord :: W.BitsRecord
+                                 , brcZeros      :: IS.IntSet
+                                 , brcOnes       :: IS.IntSet
+                                 }
 
 data GroupCoverage = Recs RecsCoverage
                    | BRec BRecCoverage
@@ -103,9 +107,12 @@ takeBitIdx width bit =
   else
     Right $ Just $ fromInteger bit
 
-takeBitIndices :: Int -> Set.Set Integer -> Set.Set Integer ->
-                  Either String (IS.IntSet, IS.IntSet)
-takeBitIndices w ones zeros = liftA2 (,) (get ones) (get zeros)
+makeBRC :: W.BitsRecord -> Int -> Set.Set Integer -> Set.Set Integer ->
+           Either String BRecCoverage
+makeBRC brec w zeros ones = do { is0 <- get zeros
+                               ; is1 <- get ones
+                               ; return $ BRecCoverage brec is0 is1
+                               }
   where get vals = do { ints' <- mapM (takeBitIdx w) (Set.toAscList vals)
                       ; return $ IS.fromAscList $ catMaybes ints'
                       }
@@ -122,7 +129,6 @@ mergeGrp scope sd (idx, grp) = ((,) (W.grpName grp)) <$> gc
             case W.grpRecs grp of
               Left recs -> checkWidths width vals >>
                            (Right $ Recs $ RecsCoverage recs vals)
-              Right brec -> (BRec . BRecCoverage brec) <$>
-                            (takeBitIndices width ones zeros)
+              Right brec -> BRec <$> makeBRC brec width zeros ones
           else
             Right $ BadScope

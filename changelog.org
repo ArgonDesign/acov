@@ -2,6 +2,7 @@
 #+STARTUP: showeverything
 
 * v0.2.2
+  - Fix backwards reporting of cover bits
   - Allow building with GHC 8.4
   - Add an --ignore-hash argument. This is really for development (someone
     gives us a log and acov file and we want to hack on the source and re-run

@@ -69,12 +69,14 @@ countGroup' (M.Recs (M.RecsCoverage recs vals)) = RecCov cnt recs misses
         nToTake = fromInteger (min (countMissed cnt) 10)
         misses = crossMisses nToTake vals cross
 
-countGroup' (M.BRec (M.BRecCoverage brec (ones, zeros))) =
+-- (M.BRecCoverage brec (ones, zeros))
+
+countGroup' (M.BRec brc) =
   BRecCov cnt bc0 bc1
-  where cnt = cbCount w ones zeros
-        w = W.brWidth brec
-        bc0 = mkBC w ones
-        bc1 = mkBC w zeros
+  where cnt = cbCount w (M.brcOnes brc) (M.brcZeros brc)
+        w = W.brWidth $ M.brcBitsRecord brc
+        bc1 = mkBC w $ M.brcOnes brc
+        bc0 = mkBC w $ M.brcZeros brc
 
 countGroup' M.BadScope = BadScope
 
