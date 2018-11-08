@@ -108,26 +108,34 @@ writeGroup handle syms (idx, (guards, isCovBits, width)) =
   where put = hPutStr handle
         nwords = quot (width + 63) 64
 
+-- Take a slice of a verilog symbol, starting at bit LO, with width W.
+-- We should have W <= 64. If W < 64, pad it out to 64 bits
+-- explicitly.
+--
+--    λ> showFieldSlice "foo" 0 20
+--    "{44'b0, foo[19:0]}"
+--
+showFieldSlice :: String -> Int -> Int -> String
+showFieldSlice name lo w = (if w < 64 then pad (64 - w) else id) slice
+  where pad k str = '{' : show k ++ "'b0, " ++ str ++ "}"
+        slice = name ++ "[" ++ show hi ++ ":" ++ show lo ++ "]"
+        hi = lo + w - 1
+
+-- Show all the pieces of the field, as the arguments to pass to the
+-- acov_recgroup_N function.
+--
+--   λ> showFieldArgs "foo" 200
+--   "{56'b0, foo[199:192]}, foo[191:128], foo[127:64], foo[63:0]"
+--
+showFieldArgs :: String -> Int -> String
+showFieldArgs name w = intercalate ", " $
+                       map slice (reverse [0..(quot (w + 63) 64)-1])
+  where slice idx = showFieldSlice name (lo idx) (min (w - lo idx) 64)
+        lo idx = 64 * idx
+
 showRecArgs :: Int -> Int -> String
-showRecArgs idx width =
-  assert (width > 0)
-  "{" ++
-  (if pad >= 0 then
-     show pad ++ "'b0, " ++ slice (width - 1) (width + pad - 64)
-   else
-     "") ++
-  rst False (quot width 64) ++ "}"
-  where pad = 63 - rem (width + 63) 64
-        name = "acov_recgroup_" ++ show idx
-        slice top bot =
-          name ++ "[" ++
-          (if top == bot then show top else show top ++ ":" ++ show bot)
-          ++ "]"
-        rst _ 0 = ""
-        rst comma nleft =
-          (if comma then ", " else "") ++
-          slice (64 * nleft - 1) (64 * (nleft - 1)) ++
-          rst True (nleft - 1)
+showRecArgs idx width = assert (width > 0) $ showFieldArgs name width
+  where name = "acov_recgroup_" ++ show idx
 
 startGuard :: Handle -> SymbolTable (Ranged E.Slice) ->
               [Ranged E.Expression] -> IO Bool
