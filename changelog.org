@@ -1,6 +1,8 @@
 #+OPTIONS: ^:nil
 #+STARTUP: showeverything
 
+* v0.2.3
+  - Fix dumping of records that are more than 64 bits wide.
 * v0.2.2
   - Fix backwards reporting of cover bits
   - Allow building with GHC 8.4
