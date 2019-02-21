@@ -59,7 +59,7 @@ import VInt
 
 -}
 newtype Symbol = Symbol String
-  deriving (Eq, Ord)
+  deriving (Show, Eq, Ord)
 
 symName :: Symbol -> String
 symName (Symbol name) = name
