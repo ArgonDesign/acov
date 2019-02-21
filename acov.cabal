@@ -13,6 +13,20 @@ build-type:          Custom
 extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 data-files:          data/acov.css
+synopsis:            A SystemVerilog functional coverage generator
+description:         acov reads a special input and generates code that
+                     tracks functional coverage for user-defined crosses.
+                     This works by either DPI or SystemVerilog coverpoints.
+
+source-repository head
+  type:                git
+  location:            https://github.com/ArgonDesign/acov.git
+
+custom-setup
+  setup-depends:       Cabal
+                     , base
+                     , directory >= 1.2
+                     , process >= 1.1.0.2
 
 library
   exposed-modules:     Ranged
