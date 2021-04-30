@@ -129,6 +129,8 @@ reservedOpNames = [ ";" , "," , ":" , "=" , ".."
 
 language :: L.LanguageDef ()
 language = L.emptyDef { T.commentLine = "//"
+                      , T.commentStart = "/*"
+                      , T.commentEnd = "*/"
                       , T.reservedNames = reservedNames
                       , T.reservedOpNames = reservedOpNames
                       }
